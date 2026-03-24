@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cassert>
 #include <string>
+#include <cstring>
 
 // 测试计数器
 extern int tests_run;
@@ -42,10 +43,31 @@ extern int tests_passed;
         } \
     } while(0)
 
+#define ASSERT_GE(a, b) \
+    do { \
+        tests_run++; \
+        if ((a) >= (b)) { \
+            tests_passed++; \
+        } else { \
+            std::cerr << "FAIL: " << #a << " >= " << #b << " at " << __FILE__ << ":" << __LINE__; \
+            std::cerr << " (expected >=" << (b) << ", got " << (a) << ")" << std::endl; \
+        } \
+    } while(0)
+
+#define ASSERT_NOT_NULL(ptr) \
+    do { \
+        tests_run++; \
+        if ((ptr) != nullptr) { \
+            tests_passed++; \
+        } else { \
+            std::cerr << "FAIL: " << #ptr << " != nullptr at " << __FILE__ << ":" << __LINE__ << std::endl; \
+        } \
+    } while(0)
+
 #define ASSERT_STREQ(a, b) \
     do { \
         tests_run++; \
-        if (std::string(a) == std::string(b)) { \
+        if (std::strcmp((a), (b)) == 0) { \
             tests_passed++; \
         } else { \
             std::cerr << "FAIL: \"" << (a) << "\" == \"" << (b) << "\" at " << __FILE__ << ":" << __LINE__ << std::endl; \

@@ -107,7 +107,7 @@ std::string Value::toString() const {
 }
 
 std::string Value::toSQLString() const {
-    if (isNull_) return "NULL";
+    if (isNull_) return "\\N";
     if (type_ == DataType::INT || type_ == DataType::BIGINT ||
         type_ == DataType::SMALLINT || type_ == DataType::TINYINT ||
         type_ == DataType::FLOAT || type_ == DataType::DOUBLE ||
@@ -131,7 +131,7 @@ Value Value::parseFrom(const std::string& str, DataType type) {
     Value val;
     val.type_ = type;
 
-    if (str == "NULL" || str == "null" || str.empty()) {
+    if (str == "NULL" || str == "null" || str == "\\N" || str == "\\\\N" || str.empty()) {
         val.isNull_ = true;
         return val;
     }

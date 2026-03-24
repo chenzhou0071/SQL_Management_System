@@ -53,6 +53,41 @@ enum class ConstraintType {
 };
 
 // ============================================================
+// 索引类型
+// ============================================================
+enum class IndexType {
+    BTREE,
+    HASH
+};
+
+// ============================================================
+// 索引定义
+// ============================================================
+struct IndexDef {
+    std::string name;           // 索引名称
+    std::string tableName;      // 所属表
+    std::vector<std::string> columns;  // 索引列（支持复合索引）
+    IndexType type = IndexType::BTREE;
+    bool unique = false;        // 是否唯一索引
+
+    std::string toString() const;
+};
+
+// ============================================================
+// 外键定义
+// ============================================================
+struct ForeignKeyDef {
+    std::string name;           // 外键名称
+    std::string column;         // 当前表列
+    std::string refTable;       // 引用表
+    std::string refColumn;      // 引用列
+    std::string onDelete;       // DELETE 时动作：CASCADE, SET NULL, RESTRICT, NO ACTION
+    std::string onUpdate;       // UPDATE 时动作
+
+    std::string toString() const;
+};
+
+// ============================================================
 // 列定义
 // ============================================================
 struct ColumnDef {
@@ -80,8 +115,11 @@ struct ColumnDef {
 struct TableDef {
     std::string name;
     std::string database;
+    std::string engine = "MiniSQL";
     std::string comment;
     std::vector<ColumnDef> columns;
+    std::vector<IndexDef> indexes;      // 表级索引定义
+    std::vector<ForeignKeyDef> foreignKeys;  // 外键定义
 
     std::string toString() const;
 };

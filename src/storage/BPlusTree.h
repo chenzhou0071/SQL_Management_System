@@ -1,0 +1,62 @@
+#pragma once
+
+#include <vector>
+#include <memory>
+#include <cstdint>
+
+namespace minisql {
+namespace storage {
+
+// B+树节点
+class BPlusTreeNode {
+public:
+    bool isLeaf;
+    std::vector<int64_t> keys;
+    std::vector<int> values;  // 叶���节点：row_id，内部节点：孩子指针
+    std::vector<std::shared_ptr<BPlusTreeNode>> children;
+    std::shared_ptr<BPlusTreeNode> next;  // 叶子节点链表指针
+
+    BPlusTreeNode(bool leaf = true) : isLeaf(leaf) {}
+};
+
+// B+树
+class BPlusTree {
+public:
+    BPlusTree(int order = 200);  // 阶数 m
+
+    // 插入
+    bool insert(int64_t key, int rowId);
+
+    // 删除
+    bool remove(int64_t key);
+
+    // 查���
+    int find(int64_t key);  // 返回 row_id，不存在返回 -1
+
+    // 范围查询 [min, max]
+    std::vector<int> rangeSearch(int64_t min, int64_t max);
+
+    // 清空
+    void clear();
+
+    // 获取根节点（用于调试）
+    std::shared_ptr<BPlusTreeNode> getRoot() { return root_; }
+
+private:
+    int order_;  // 阶数 m
+    int minKeys_;  // 最少键数 ⌈m/2⌉ - 1
+    std::shared_ptr<BPlusTreeNode> root_;
+
+    // 内部方法
+    std::shared_ptr<BPlusTreeNode> insert(std::shared_ptr<BPlusTreeNode> node, int64_t key, int rowId, int64_t& splitKey);
+    void splitChild(std::shared_ptr<BPlusTreeNode> parent, int index);
+    std::shared_ptr<BPlusTreeNode> remove(std::shared_ptr<BPlusTreeNode> node, int64_t key);
+    void borrowFromLeft(std::shared_ptr<BPlusTreeNode> node, int index);
+    void borrowFromRight(std::shared_ptr<BPlusTreeNode> node, int index);
+    void merge(std::shared_ptr<BPlusTreeNode> node, int index);
+    int findKey(std::shared_ptr<BPlusTreeNode> node, int64_t key);
+    int findChildIndex(std::shared_ptr<BPlusTreeNode> node, int64_t key);
+};
+
+}  // namespace storage
+}  // namespace minisql

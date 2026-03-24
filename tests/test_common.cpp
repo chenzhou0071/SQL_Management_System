@@ -126,6 +126,13 @@ TEST(test_value_parse_from) {
 
     Value v3 = Value::parseFrom("NULL", DataType::INT);
     ASSERT_TRUE(v3.isNull());
+
+    // 测试 \N 格式的 NULL
+    Value v4 = Value::parseFrom("\\N", DataType::VARCHAR);
+    ASSERT_TRUE(v4.isNull());
+
+    Value v5 = Value::parseFrom("null", DataType::INT);
+    ASSERT_TRUE(v5.isNull());
 }
 
 TEST(test_value_sql_string) {
@@ -134,6 +141,10 @@ TEST(test_value_sql_string) {
 
     Value n(42);
     ASSERT_STREQ(n.toSQLString().c_str(), "42");
+
+    // 测试 NULL 输出为 \N
+    Value nullVal;
+    ASSERT_STREQ(nullVal.toSQLString().c_str(), "\\N");
 }
 
 // ============================================================

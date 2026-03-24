@@ -84,6 +84,7 @@ enum class ErrorCode : int {
 // ============================================================
 class MiniSQLException : public std::exception {
 public:
+    MiniSQLException() : code_(ErrorCode::SUCCESS), message_(""), sqlState_("00000") {}
     explicit MiniSQLException(ErrorCode code, const std::string& message);
 
     ErrorCode getCode() const { return code_; }
@@ -126,7 +127,19 @@ class Result {
 public:
     Result() : success_(true), value_(nullptr) {}
     Result(T* value) : success_(true), value_(value) {}
+    Result(const T& value) : success_(true), value_(new T(value)) {}
     Result(const MiniSQLException& error) : success_(false), error_(error) {}
+
+    // 禁止拷贝
+    Result(const Result&) = delete;
+    Result& operator=(const Result&) = delete;
+
+    // 移动构造
+    Result(Result&& other) noexcept : success_(other.success_), value_(other.value_), error_(std::move(other.error_)) {
+        other.value_ = nullptr;
+    }
+
+    ~Result() { delete value_; }
 
     bool isSuccess() const { return success_; }
     bool isError() const { return !success_; }

@@ -24,6 +24,30 @@ std::string ColumnDef::toString() const {
 }
 
 // ============================================================
+// IndexDef 方法
+// ============================================================
+std::string IndexDef::toString() const {
+    std::stringstream ss;
+    ss << "INDEX " << name << " (";
+    for (size_t i = 0; i < columns.size(); i++) {
+        if (i > 0) ss << ", ";
+        ss << columns[i];
+    }
+    ss << ")";
+    if (unique) ss << " UNIQUE";
+    return ss.str();
+}
+
+// ============================================================
+// ForeignKeyDef 方法
+// ============================================================
+std::string ForeignKeyDef::toString() const {
+    std::stringstream ss;
+    ss << "FOREIGN KEY " << name << " (" << column << ") REFERENCES " << refTable << "(" << refColumn << ")";
+    return ss.str();
+}
+
+// ============================================================
 // TableDef 方法
 // ============================================================
 std::string TableDef::toString() const {
