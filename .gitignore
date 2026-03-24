@@ -1,0 +1,66 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# Qt generated files
+*.autosave
+*.qmlc
+*.jsc
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+*.pro.user
+*.pro.user.*
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Object files
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.out
+*.app
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data directory (runtime generated)
+data/
+log/
+
+# Test files
+tests/bin/
+tests/obj/
+
+# Documentation (keep only docs/plans)
+docs/*.docx
+docs/*.md
+!docs/plans/*.md
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
