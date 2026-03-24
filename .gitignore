@@ -64,3 +64,5 @@ docs/*.md
 *.tar.gz
 *.7z
 *.rar
+
+.claude
