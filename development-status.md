@@ -10,6 +10,73 @@
 
 ## 开发进度
 
+### ✅ Phase 3: SQL 解析器 (已完成)
+
+**实现时间**: 2026-03-26
+
+**核心功能**:
+
+#### 3.1 词法分析器 (`Lexer.h/cpp`)
+- ✅ Token 类型定义（关键字、标识符、字面量、操作符等）
+- ✅ SQL 关键字识别（100+ 关键字，大小写不敏感）
+- ✅ 数字解析（整数、浮点数、科学计数法）
+- ✅ 字符串解析（单引号、双引号、转义字符）
+- ✅ 标识符解析
+- ✅ 操作符解析（=, <, >, <=, >=, <>, != 等）
+- ✅ 注释处理（单行 `--`、多行 `/* */`）
+- ✅ peekToken 预读支持
+
+#### 3.2 AST 节点定义 (`AST.h`)
+- ✅ 基础节点类 (`ASTNode`)
+- ✅ 表达式节点：`LiteralExpr`, `ColumnRef`, `BinaryExpr`, `UnaryExpr`
+- ✅ 语句节点：`SelectStmt`, `InsertStmt`, `UpdateStmt`, `DeleteStmt`, `CreateTableStmt`, `DropStmt`, `UseStmt`, `ShowStmt`
+- ✅ 表引用节点：`TableRef`, `JoinClause`
+- ✅ 列定义节点：`ColumnDefNode`, `ConstraintDefNode`
+
+#### 3.3 语法分析器 (`Parser.h/cpp`)
+- ✅ USE 语句：`USE database;`
+- ✅ SHOW 语句：`SHOW DATABASES;`, `SHOW TABLES;`
+- ✅ SELECT 语句：
+  - SELECT 列表、DISTINCT
+  - FROM 子句
+  - WHERE 子句
+  - JOIN 子句（INNER, LEFT, RIGHT, FULL, CROSS）
+  - GROUP BY、HAVING
+  - ORDER BY、LIMIT、OFFSET
+- ✅ INSERT 语句：`INSERT INTO table (cols) VALUES (...);`
+- ✅ UPDATE 语句：`UPDATE table SET col=val WHERE ...;`
+- ✅ DELETE 语句：`DELETE FROM table WHERE ...;`
+- ✅ CREATE TABLE 语句（支持 IF NOT EXISTS、列约束）
+- ✅ DROP TABLE 语句（支持 IF EXISTS）
+- ✅ 表达式解析（递归下降 + Pratt Parser 技术处理优先级）
+
+#### 3.4 语义分析器 (`SemanticAnalyzer.h/cpp`)
+- ✅ 表存在性检查
+- ✅ 字段存在性检查
+- ✅ 数据类型验证
+- ✅ 约束检查（重复列名、空列名、表已存在等）
+- ✅ 表达式验证（列引用检查）
+
+**测试覆盖**: 188/188 通过
+
+**文件清单**:
+```
+src/parser/
+├── Token.h/cpp           # Token 类型和关键字表
+├── Lexer.h/cpp           # 词法分析器
+├── AST.h                 # AST 节点定义
+├── Parser.h/cpp          # 语法分析器
+└── SemanticAnalyzer.h/cpp # 语义分析器
+
+tests/
+├── test_lexer.cpp        # 122 测试
+├── test_ast.cpp          # 10 测试
+├── test_parser.cpp       # 40 测试
+└── test_semantic.cpp     # 16 测试
+```
+
+---
+
 ### ✅ Phase 1: 基础框架 (已完成)
 
 **实现时间**: 2026-03-24
@@ -260,6 +327,10 @@ cmake --build . --target storage
 ### 测试结果
 - **test_common**: 60/60 通过
 - **test_storage**: 1134/1134 通过
+- **test_lexer**: 122/122 通过
+- **test_ast**: 10/10 通过
+- **test_parser**: 40/40 通过
+- **test_semantic**: 16/16 通过
 
 ---
 
@@ -280,6 +351,14 @@ E:\pro\SQL_Management_System\
 │   │   ├── BPlusTree.h/cpp
 │   │   └── IndexManager.h/cpp
 │   │
+│   ├── parser/          # SQL 解析器 (Phase 3)
+│   │   ├── Token.h/cpp
+│   │   ├── Keywords.cpp
+│   │   ├── Lexer.h/cpp
+│   │   ├── AST.h
+│   │   ├── Parser.h/cpp
+│   │   └── SemanticAnalyzer.h/cpp
+│   │
 │   └── external/        # 外部依赖
 │       └── json.hpp     # nlohmann/json 库
 │
@@ -287,6 +366,10 @@ E:\pro\SQL_Management_System\
 │   ├── test_utils.h/cpp
 │   ├── test_common.cpp
 │   ├── test_storage.cpp
+│   ├── test_lexer.cpp
+│   ├── test_ast.cpp
+│   ├── test_parser.cpp
+│   ├── test_semantic.cpp
 │   └── demo_file_creation.cpp
 │
 ├── build/               # 编译输出
@@ -327,10 +410,11 @@ data/demo_db/
 
 ## 下一阶段规划
 
-### Phase 3: SQL 解析器 (未开始)
-- 词法分析器 (Lexer)
-- 语法分析器 (Parser)
-- 抽象语法树 (AST)
+### Phase 3: SQL 解析器 (已完成)
+- ✅ 词法分析器 (Lexer)
+- ✅ 语法分析器 (Parser)
+- ✅ 抽象语法树 (AST)
+- ✅ 语义分析器 (SemanticAnalyzer)
 
 ### Phase 4: 查询执行器 (未开始)
 - 查询计划生成
@@ -389,6 +473,62 @@ data/demo_db/
 
 - **2e7e544**: feat: 完成第一阶段 - 基础框架
 - **82743b3**: feat: 实现第二阶段 - 存储与索引引擎
+- **ceaeb95**: feat(parser): 实现完整的 SQL 解析器（Lexer、AST、Parser、SemanticAnalyzer）
+
+---
+
+## Phase 3 未实现功能
+
+### ⚠️ ALTER TABLE 语句
+
+**当前状态**: 未实现
+**需要功能**:
+- 添加/删除列
+- 修改列类型
+- 添加/删除约束
+- 重命名表
+
+**预估工作量**: 100-150 行代码
+
+---
+
+### ⚠️ 函数调用表达式
+
+**当前状态**: 部分实现（仅占位符）
+**需要功能**:
+- 聚合函数：`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+- 字符串函数：`CONCAT`, `SUBSTRING`, `UPPER`, `LOWER`
+- 日期函数：`NOW`, `DATE`, `TIME`
+- 类型转换：`CAST`, `CONVERT`
+
+**预估工作量**: 150-200 行代码
+
+---
+
+### ⚠️ 子查询支持
+
+**当前状态**: 未实现
+**需要功能**:
+- IN 子查询
+- EXISTS 子查询
+- 标量子查询
+- 关联子查询
+
+**预估工作量**: 100-150 行代码
+
+---
+
+### ⚠️ 语义分析增强
+
+**当前状态**: 基础实现
+**需要功能**:
+- INSERT/UPDATE 时数据类型验证（值类型 vs 列定义类型）
+- 非空约束验证
+- 主键/唯一约束检查
+- 外键约束检查
+- 默认值处理
+
+**预估工作量**: 100-200 行代码
 
 ---
 
@@ -399,4 +539,4 @@ data/demo_db/
 
 ---
 
-*最后更新: 2026-03-24*
+*最后更新: 2026-03-26*
