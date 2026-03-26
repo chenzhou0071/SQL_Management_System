@@ -7,8 +7,8 @@ add_library(storage
 
 target_include_directories(storage PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/common
-    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src/common
+    ${CMAKE_SOURCE_DIR}/src
     E:/mingw64/mingw64/include
 )
 

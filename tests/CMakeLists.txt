@@ -22,7 +22,22 @@ add_test(NAME storage_tests COMMAND test_storage)
 add_executable(demo_file_creation demo_file_creation.cpp)
 target_link_libraries(demo_file_creation PRIVATE storage common)
 
-# 词法分析测试（后续模块）
-# add_executable(test_lexer test_lexer.cpp)
-# target_link_libraries(test_lexer PRIVATE parser test_utils)
-# add_test(NAME lexer_tests COMMAND test_lexer)
+# 词法分析测试
+add_executable(test_lexer test_lexer.cpp)
+target_link_libraries(test_lexer PRIVATE parser test_utils)
+add_test(NAME lexer_tests COMMAND test_lexer)
+
+# AST 测试
+add_executable(test_ast test_ast.cpp)
+target_link_libraries(test_ast PRIVATE parser test_utils)
+add_test(NAME ast_tests COMMAND test_ast)
+
+# Parser 测试
+add_executable(test_parser test_parser.cpp)
+target_link_libraries(test_parser PRIVATE parser test_utils)
+add_test(NAME parser_tests COMMAND test_parser)
+
+# 语义分析测试
+add_executable(test_semantic test_semantic.cpp)
+target_link_libraries(test_semantic PRIVATE parser storage test_utils)
+add_test(NAME semantic_tests COMMAND test_semantic)

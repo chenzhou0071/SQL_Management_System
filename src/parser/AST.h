@@ -1,0 +1,371 @@
+#pragma once
+
+#include "Token.h"
+#include "../common/Value.h"
+#include <string>
+#include <vector>
+#include <memory>
+
+namespace minisql {
+namespace parser {
+
+// ============================================================
+// AST 节点类型枚举
+// ============================================================
+enum class ASTNodeType {
+    UNKNOWN,
+
+    // 语句节点
+    SELECT_STMT,
+    INSERT_STMT,
+    UPDATE_STMT,
+    DELETE_STMT,
+    CREATE_STMT,
+    DROP_STMT,
+    ALTER_STMT,
+    USE_STMT,
+    SHOW_STMT,
+
+    // 表达式节点
+    EXPRESSION,
+    BINARY_EXPR,
+    UNARY_EXPR,
+    LITERAL_EXPR,
+    COLUMN_REF,
+    FUNCTION_CALL,
+
+    // 子句节点
+    SELECT_CLAUSE,
+    FROM_CLAUSE,
+    WHERE_CLAUSE,
+    GROUP_BY_CLAUSE,
+    HAVING_CLAUSE,
+    ORDER_BY_CLAUSE,
+    LIMIT_CLAUSE,
+
+    // 表引用
+    TABLE_REF,
+    JOIN_CLAUSE,
+
+    // 列定义
+    COLUMN_DEF,
+    CONSTRAINT_DEF
+};
+
+// ============================================================
+// AST 节点基类
+// ============================================================
+class ASTNode {
+public:
+    ASTNode(ASTNodeType type = ASTNodeType::UNKNOWN) : type_(type) {}
+    virtual ~ASTNode() = default;
+
+    ASTNodeType getType() const { return type_; }
+    virtual std::string toString() const { return "ASTNode"; }
+
+protected:
+    ASTNodeType type_;
+};
+
+// ============================================================
+// 表达式基类
+// ============================================================
+class Expression : public ASTNode {
+public:
+    Expression() : ASTNode(ASTNodeType::EXPRESSION) {}
+
+    virtual std::string toString() const override { return "Expression"; }
+};
+
+using ExprPtr = std::shared_ptr<Expression>;
+
+// ============================================================
+// 字面量表达式
+// ============================================================
+class LiteralExpr : public Expression {
+public:
+    explicit LiteralExpr(const Value& value)
+        : value_(value) {
+        type_ = ASTNodeType::LITERAL_EXPR;
+    }
+
+    const Value& getValue() const { return value_; }
+    std::string toString() const override {
+        return value_.toString();
+    }
+
+private:
+    Value value_;
+};
+
+// ============================================================
+// 列引用表达式
+// ============================================================
+class ColumnRef : public Expression {
+public:
+    ColumnRef(const std::string& table, const std::string& column)
+        : table_(table), column_(column) {
+        type_ = ASTNodeType::COLUMN_REF;
+    }
+
+    const std::string& getTable() const { return table_; }
+    const std::string& getColumn() const { return column_; }
+    std::string toString() const override {
+        if (table_.empty()) return column_;
+        return table_ + "." + column_;
+    }
+
+private:
+    std::string table_;
+    std::string column_;
+};
+
+// ============================================================
+// 二元表达式
+// ============================================================
+class BinaryExpr : public Expression {
+public:
+    BinaryExpr(ExprPtr left, const std::string& op, ExprPtr right)
+        : left_(left), op_(op), right_(right) {
+        type_ = ASTNodeType::BINARY_EXPR;
+    }
+
+    ExprPtr getLeft() const { return left_; }
+    const std::string& getOp() const { return op_; }
+    ExprPtr getRight() const { return right_; }
+    std::string toString() const override {
+        return "(" + left_->toString() + " " + op_ + " " + right_->toString() + ")";
+    }
+
+private:
+    ExprPtr left_;
+    std::string op_;
+    ExprPtr right_;
+};
+
+// ============================================================
+// 一元表达式
+// ============================================================
+class UnaryExpr : public Expression {
+public:
+    UnaryExpr(const std::string& op, ExprPtr operand)
+        : op_(op), operand_(operand) {
+        type_ = ASTNodeType::UNARY_EXPR;
+    }
+
+    const std::string& getOp() const { return op_; }
+    ExprPtr getOperand() const { return operand_; }
+    std::string toString() const override {
+        return op_ + operand_->toString();
+    }
+
+private:
+    std::string op_;
+    ExprPtr operand_;
+};
+
+// ============================================================
+// 表引用
+// ============================================================
+struct TableRef : public ASTNode {
+    std::string name;
+    std::string alias;
+    std::string database;
+
+    TableRef() : ASTNode(ASTNodeType::TABLE_REF) {}
+    std::string toString() const override {
+        if (!alias.empty()) return name + " AS " + alias;
+        return name;
+    }
+};
+
+// ============================================================
+// JOIN 子句
+// ============================================================
+struct JoinClause : public ASTNode {
+    std::string joinType;  // INNER, LEFT, RIGHT, FULL
+    std::shared_ptr<TableRef> table;
+    ExprPtr onCondition;
+
+    JoinClause() : ASTNode(ASTNodeType::JOIN_CLAUSE) {}
+};
+
+// ============================================================
+// ORDER BY 项
+// ============================================================
+struct OrderByItem {
+    ExprPtr expr;
+    bool ascending = true;
+};
+
+// ============================================================
+// SELECT 语句
+// ============================================================
+class SelectStmt : public ASTNode {
+public:
+    SelectStmt() : ASTNode(ASTNodeType::SELECT_STMT), distinct(false), limit(-1), offset(-1) {}
+
+    // SELECT 子句
+    std::vector<ExprPtr> selectItems;
+    bool distinct;
+
+    // FROM 子句
+    std::shared_ptr<TableRef> fromTable;
+    std::vector<std::shared_ptr<JoinClause>> joins;
+
+    // WHERE 子句
+    ExprPtr whereClause;
+
+    // GROUP BY 子句
+    std::vector<ExprPtr> groupBy;
+
+    // HAVING 子句
+    ExprPtr havingClause;
+
+    // ORDER BY 子句
+    std::vector<OrderByItem> orderBy;
+
+    // LIMIT 子句
+    int limit;
+    int offset;
+
+    std::string toString() const override {
+        return "SELECT ...";
+    }
+};
+
+// ============================================================
+// INSERT 语句
+// ============================================================
+class InsertStmt : public ASTNode {
+public:
+    InsertStmt() : ASTNode(ASTNodeType::INSERT_STMT) {}
+
+    std::string table;
+    std::vector<std::string> columns;
+    std::vector<std::vector<ExprPtr>> valuesList;  // 支持批量插入
+
+    std::string toString() const override {
+        return "INSERT INTO " + table + " ...";
+    }
+};
+
+// ============================================================
+// UPDATE 语句
+// ============================================================
+class UpdateStmt : public ASTNode {
+public:
+    UpdateStmt() : ASTNode(ASTNodeType::UPDATE_STMT) {}
+
+    std::string table;
+    std::vector<std::pair<std::string, ExprPtr>> assignments;
+    ExprPtr whereClause;
+
+    std::string toString() const override {
+        return "UPDATE " + table + " ...";
+    }
+};
+
+// ============================================================
+// DELETE 语句
+// ============================================================
+class DeleteStmt : public ASTNode {
+public:
+    DeleteStmt() : ASTNode(ASTNodeType::DELETE_STMT) {}
+
+    std::string table;
+    ExprPtr whereClause;
+
+    std::string toString() const override {
+        return "DELETE FROM " + table + " ...";
+    }
+};
+
+// ============================================================
+// CREATE TABLE 语句
+// ============================================================
+struct ColumnDefNode : public ASTNode {
+    std::string name;
+    DataType type;
+    int length = 0;
+    bool notNull = false;
+    bool primaryKey = false;
+    bool unique = false;
+    bool autoIncrement = false;
+    std::string defaultValue;
+
+    ColumnDefNode() : ASTNode(ASTNodeType::COLUMN_DEF) {}
+};
+
+struct ConstraintDefNode : public ASTNode {
+    ConstraintType type;
+    std::string name;
+    std::vector<std::string> columns;
+
+    ConstraintDefNode() : ASTNode(ASTNodeType::CONSTRAINT_DEF) {}
+};
+
+class CreateTableStmt : public ASTNode {
+public:
+    CreateTableStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false) {}
+
+    std::string table;
+    std::vector<std::shared_ptr<ColumnDefNode>> columns;
+    std::vector<std::shared_ptr<ConstraintDefNode>> constraints;
+    bool ifNotExists;
+    std::string engine;
+    std::string comment;
+
+    std::string toString() const override {
+        return "CREATE TABLE " + table + " ...";
+    }
+};
+
+// ============================================================
+// DROP 语句
+// ============================================================
+class DropStmt : public ASTNode {
+public:
+    DropStmt() : ASTNode(ASTNodeType::DROP_STMT), ifExists(false) {}
+
+    std::string objectType;  // TABLE, DATABASE, INDEX, VIEW
+    std::string name;
+    bool ifExists;
+
+    std::string toString() const override {
+        return "DROP " + objectType + " " + name;
+    }
+};
+
+// ============================================================
+// USE 语句
+// ============================================================
+class UseStmt : public ASTNode {
+public:
+    UseStmt() : ASTNode(ASTNodeType::USE_STMT) {}
+
+    std::string database;
+
+    std::string toString() const override {
+        return "USE " + database;
+    }
+};
+
+// ============================================================
+// SHOW 语句
+// ============================================================
+class ShowStmt : public ASTNode {
+public:
+    ShowStmt() : ASTNode(ASTNodeType::SHOW_STMT) {}
+
+    std::string objectType;  // DATABASES, TABLES, COLUMNS, INDEX
+    std::string database;
+    std::string table;
+
+    std::string toString() const override {
+        return "SHOW " + objectType;
+    }
+};
+
+}  // namespace parser
+}  // namespace minisql

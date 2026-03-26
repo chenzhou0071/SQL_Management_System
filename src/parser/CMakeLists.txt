@@ -1,7 +1,9 @@
 add_library(parser
+    Token.cpp
+    Keywords.cpp
     Lexer.cpp
     Parser.cpp
-    AST.cpp
+    SemanticAnalyzer.cpp
 )
 
 target_include_directories(parser PUBLIC
@@ -9,4 +11,4 @@ target_include_directories(parser PUBLIC
     ${CMAKE_SOURCE_DIR}/src/common
 )
 
-target_link_libraries(parser PRIVATE common Qt${QT_VERSION_MAJOR}::Core)
+target_link_libraries(parser PRIVATE common storage Qt${QT_VERSION_MAJOR}::Core)
