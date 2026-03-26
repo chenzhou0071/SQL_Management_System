@@ -1,9 +1,12 @@
 #include "BPlusTree.h"
+#include "external/json.hpp"
 #include "../common/Logger.h"
 #include <algorithm>
+#include <sstream>
 
 using namespace minisql;
 using namespace storage;
+using json = nlohmann::json;
 
 BPlusTree::BPlusTree(int order) : order_(order) {
     minKeys_ = (order + 1) / 2;  // ceil(m/2)
@@ -205,4 +208,151 @@ std::shared_ptr<BPlusTreeNode> BPlusTree::remove(std::shared_ptr<BPlusTreeNode> 
 
 void BPlusTree::clear() {
     root_ = std::make_shared<BPlusTreeNode>(true);
+}
+
+std::string BPlusTree::serialize() const {
+    json j;
+    j["order"] = order_;
+    j["version"] = 1;
+
+    // 使用扁平化的节点列表，前序遍历
+    std::vector<std::string> nodes;
+    serializeNode(root_, nodes, -1, 0);
+    j["nodes"] = nodes;
+    j["rootIndex"] = 0;
+
+    return j.dump(2);
+}
+
+void BPlusTree::serializeNode(const std::shared_ptr<BPlusTreeNode>& node,
+                              std::vector<std::string>& nodes,
+                              int parentIndex,
+                              int childIndex) const {
+    json nodeJson;
+    nodeJson["isLeaf"] = node->isLeaf;
+    nodeJson["parentIndex"] = parentIndex;
+    nodeJson["childIndex"] = childIndex;
+
+    // 序列化键
+    for (int64_t key : node->keys) {
+        nodeJson["keys"].push_back(key);
+    }
+
+    // 序列化值（叶子节点）或子节点数量（内部节点）
+    if (node->isLeaf) {
+        for (int val : node->values) {
+            nodeJson["values"].push_back(val);
+        }
+        // 记录当前叶子节点在节点数组中的索引，用于恢复 next 指针
+        nodeJson["selfIndex"] = nodes.size();
+    } else {
+        nodeJson["childCount"] = node->children.size();
+    }
+
+    int currentIndex = nodes.size();
+    nodes.push_back(nodeJson.dump());
+
+    // 前序遍历子节点
+    if (!node->isLeaf) {
+        for (size_t i = 0; i < node->children.size(); ++i) {
+            serializeNode(node->children[i], nodes, currentIndex, i);
+        }
+    }
+}
+
+void BPlusTree::deserialize(const std::string& data) {
+    try {
+        json j = json::parse(data);
+
+        order_ = j.value("order", 200);
+        minKeys_ = (order_ + 1) / 2;
+
+        int rootIndex = j.value("rootIndex", 0);
+        std::vector<std::string> nodesJson = j["nodes"].get<std::vector<std::string>>();
+
+        // 第一遍：反序列化所有节点，恢复基本结构
+        std::vector<std::shared_ptr<BPlusTreeNode>> allNodes;
+        allNodes.reserve(nodesJson.size());
+
+        for (size_t i = 0; i < nodesJson.size(); ++i) {
+            json nodeData = json::parse(nodesJson[i]);
+            auto node = std::make_shared<BPlusTreeNode>(nodeData["isLeaf"]);
+
+            // 反序列化键
+            if (nodeData.contains("keys")) {
+                for (auto& key : nodeData["keys"]) {
+                    node->keys.push_back(key.get<int64_t>());
+                }
+            }
+
+            // 反序列化值
+            if (nodeData.contains("values")) {
+                for (auto& val : nodeData["values"]) {
+                    node->values.push_back(val.get<int>());
+                }
+            }
+
+            allNodes.push_back(node);
+        }
+
+        // 第二遍：恢复内部节点的 children 指针
+        for (size_t i = 0; i < nodesJson.size(); ++i) {
+            json nodeData = json::parse(nodesJson[i]);
+            if (!nodeData["isLeaf"]) {
+                int childCount = nodeData.value("childCount", 0);
+                // 计算子节点的起始索引
+                size_t startIdx = i + 1;
+                for (int c = 0; c < childCount; ++c) {
+                    if (startIdx + c < allNodes.size()) {
+                        allNodes[i]->children.push_back(allNodes[startIdx + c]);
+                    }
+                }
+            }
+        }
+
+        // 第三遍：恢复叶子节点的 next 指针
+        std::vector<std::shared_ptr<BPlusTreeNode>> leaves;
+        for (auto& node : allNodes) {
+            if (node->isLeaf) {
+                leaves.push_back(node);
+            }
+        }
+        for (size_t i = 0; i < leaves.size() - 1; ++i) {
+            leaves[i]->next = leaves[i + 1];
+        }
+        if (!leaves.empty()) {
+            leaves.back()->next = nullptr;
+        }
+
+        // 设置根节点
+        if (rootIndex >= 0 && rootIndex < (int)allNodes.size()) {
+            root_ = allNodes[rootIndex];
+        } else {
+            root_ = std::make_shared<BPlusTreeNode>(true);
+        }
+
+        LOG_INFO("BPlusTree", "Deserialized B+ tree with " +
+                 std::to_string(allNodes.size()) + " nodes");
+
+    } catch (const json::parse_error& e) {
+        LOG_ERROR("BPlusTree", "Failed to parse index data: " + std::string(e.what()));
+        // 回退到空树
+        root_ = std::make_shared<BPlusTreeNode>(true);
+    }
+}
+
+int BPlusTree::getNodeCount() const {
+    int count = 0;
+    std::function<void(const std::shared_ptr<BPlusTreeNode>&)> traverse =
+        [&](const std::shared_ptr<BPlusTreeNode>& node) {
+            if (!node) return;
+            count++;
+            if (!node->isLeaf) {
+                for (const auto& child : node->children) {
+                    traverse(child);
+                }
+            }
+        };
+    traverse(root_);
+    return count;
 }

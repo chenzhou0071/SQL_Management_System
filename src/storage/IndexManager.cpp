@@ -84,25 +84,58 @@ std::string IndexManager::getIndexPath(const std::string& dbName, const std::str
 }
 
 Result<void> IndexManager::saveIndex(const std::string& dbName, const std::string& indexName) {
-    // 简化实现：索引序列化（完整实现需要序列化 B+树结构）
-    // 这里只标记索引存在
-    std::string indexPath = getIndexPath(dbName, indexName);
-    std::string content = "INDEX:" + indexName;
+    if (indexes_[dbName].find(indexName) == indexes_[dbName].end()) {
+        return Result<void>(MiniSQLException(ErrorCode::INDEX_NOT_FOUND, "Index not found"));
+    }
 
-    if (!FileIO::writeToFile(indexPath, content)) {
+    auto& entry = indexes_[dbName][indexName];
+
+    // 序列化 B+树
+    std::string data = entry.tree->serialize();
+
+    std::string indexPath = getIndexPath(dbName, indexName);
+    if (!FileIO::writeToFile(indexPath, data)) {
         return Result<void>(MiniSQLException(ErrorCode::STORAGE_FILE_IO_ERROR, "Failed to save index"));
     }
+
+    LOG_INFO("IndexManager", "Saved index: " + indexName +
+             " (" + std::to_string(entry.tree->getNodeCount()) + " nodes)");
 
     return Result<void>();
 }
 
 Result<void> IndexManager::loadIndex(const std::string& dbName, const std::string& indexName) {
-    // 简化实现：重新构建索引
     std::string indexPath = getIndexPath(dbName, indexName);
+
+    // 检查文件是否存在
     if (!FileIO::existsFile(indexPath)) {
         return Result<void>(MiniSQLException(ErrorCode::INDEX_NOT_FOUND, "Index file not found"));
     }
 
-    // 完整实现需要从文件反序列化 B+树
+    // 读取索引数据
+    std::string data = FileIO::readFromFile(indexPath);
+    if (data.empty() && !FileIO::existsFile(indexPath)) {
+        return Result<void>(MiniSQLException(ErrorCode::STORAGE_FILE_IO_ERROR, "Failed to read index"));
+    }
+
+    // 反序列化 B+树
+    auto tree = std::make_shared<BPlusTree>();
+    tree->deserialize(data);
+
+    LOG_INFO("IndexManager", "Loaded index: " + indexName +
+             " (" + std::to_string(tree->getNodeCount()) + " nodes)");
+
+    // 更新内存缓存
+    if (indexes_[dbName].find(indexName) == indexes_[dbName].end()) {
+        // 创建新的索引条目（元数据需要从 .meta 文件加载）
+        IndexEntry entry;
+        entry.name = indexName;
+        entry.tree = tree;
+        indexes_[dbName][indexName] = entry;
+    } else {
+        // 更新现有索引条目
+        indexes_[dbName][indexName].tree = tree;
+    }
+
     return Result<void>();
 }
