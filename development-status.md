@@ -48,6 +48,19 @@
 - ✅ DELETE 语句：`DELETE FROM table WHERE ...;`
 - ✅ CREATE TABLE 语句（支持 IF NOT EXISTS、列约束）
 - ✅ DROP TABLE 语句（支持 IF EXISTS）
+- ✅ ALTER TABLE 语句：
+  - ADD COLUMN / ADD (添加列)
+  - DROP COLUMN / DROP (删除列)
+  - MODIFY COLUMN (修改列类型)
+  - CHANGE COLUMN (重命名列并修改类型)
+  - RENAME COLUMN (重命名列)
+  - RENAME TO (重命名表)
+  - ADD CONSTRAINT / DROP CONSTRAINT (约束操作)
+- ✅ 函数调用表达式：
+  - COUNT, SUM, AVG, MIN, MAX (聚合函数)
+  - CONCAT, SUBSTRING, UPPER, LOWER (字符串函数)
+  - NOW, DATE, YEAR, MONTH, DAY (日期函数)
+  - 嵌套函数调用
 - ✅ 表达式解析（递归下降 + Pratt Parser 技术处理优先级）
 
 #### 3.4 语义分析器 (`SemanticAnalyzer.h/cpp`)
@@ -56,6 +69,8 @@
 - ✅ 数据类型验证
 - ✅ 约束检查（重复列名、空列名、表已存在等）
 - ✅ 表达式验证（列引用检查）
+- ✅ ALTER TABLE 语句语义检查
+- ✅ 函数调用参数验证
 
 **测试覆盖**: 188/188 通过
 
@@ -329,8 +344,10 @@ cmake --build . --target storage
 - **test_storage**: 1134/1134 通过
 - **test_lexer**: 122/122 通过
 - **test_ast**: 10/10 通过
-- **test_parser**: 40/40 通过
+- **test_parser**: 57/57 通过 (包含 ALTER TABLE 和函数调用测试)
 - **test_semantic**: 16/16 通过
+
+**Phase 3 测试**: 122 + 10 + 57 + 16 = 205 个通过
 
 ---
 
@@ -478,32 +495,6 @@ data/demo_db/
 ---
 
 ## Phase 3 未实现功能
-
-### ⚠️ ALTER TABLE 语句
-
-**当前状态**: 未实现
-**需要功能**:
-- 添加/删除列
-- 修改列类型
-- 添加/删除约束
-- 重命名表
-
-**预估工作量**: 100-150 行代码
-
----
-
-### ⚠️ 函数调用表达式
-
-**当前状态**: 部分实现（仅占位符）
-**需要功能**:
-- 聚合函数：`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
-- 字符串函数：`CONCAT`, `SUBSTRING`, `UPPER`, `LOWER`
-- 日期函数：`NOW`, `DATE`, `TIME`
-- 类型转换：`CAST`, `CONVERT`
-
-**预估工作量**: 150-200 行代码
-
----
 
 ### ⚠️ 子查询支持
 

@@ -48,6 +48,9 @@ public:
     // 分析 DROP 语句
     void analyzeDrop(std::shared_ptr<DropStmt> stmt);
 
+    // 分析 ALTER TABLE 语句
+    void analyzeAlterTable(std::shared_ptr<AlterTableStmt> stmt);
+
     // 分析 USE 语句
     void analyzeUse(std::shared_ptr<UseStmt> stmt);
 

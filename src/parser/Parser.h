@@ -35,6 +35,7 @@ private:
     std::shared_ptr<DeleteStmt> parseDeleteStatement();
     std::shared_ptr<CreateTableStmt> parseCreateStatement();
     std::shared_ptr<DropStmt> parseDropStatement();
+    std::shared_ptr<AlterTableStmt> parseAlterStatement();
 
     // 解析表达式
     ExprPtr parseExpression();

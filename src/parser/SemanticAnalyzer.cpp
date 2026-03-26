@@ -28,6 +28,9 @@ void SemanticAnalyzer::analyze(std::shared_ptr<ASTNode> stmt) {
         case ASTNodeType::DROP_STMT:
             analyzeDrop(std::dynamic_pointer_cast<DropStmt>(stmt));
             break;
+        case ASTNodeType::ALTER_STMT:
+            analyzeAlterTable(std::dynamic_pointer_cast<AlterTableStmt>(stmt));
+            break;
         case ASTNodeType::USE_STMT:
             analyzeUse(std::dynamic_pointer_cast<UseStmt>(stmt));
             break;
@@ -108,6 +111,14 @@ void SemanticAnalyzer::validateExpression(ExprPtr expr, const std::string& conte
         case ASTNodeType::UNARY_EXPR: {
             auto unary = std::dynamic_pointer_cast<UnaryExpr>(expr);
             validateExpression(unary->getOperand(), contextTable);
+            break;
+        }
+        case ASTNodeType::FUNCTION_CALL: {
+            auto func = std::dynamic_pointer_cast<FunctionCallExpr>(expr);
+            // 验证函数参数
+            for (const auto& arg : func->getArgs()) {
+                validateExpression(arg, contextTable);
+            }
             break;
         }
         default:
@@ -203,6 +214,44 @@ void SemanticAnalyzer::analyzeDrop(std::shared_ptr<DropStmt> stmt) {
                 throw SemanticError("Table '" + stmt->name + "' does not exist");
             }
         }
+    }
+}
+
+void SemanticAnalyzer::analyzeAlterTable(std::shared_ptr<AlterTableStmt> stmt) {
+    // 检查表是否存在
+    checkTableExists(stmt->tableName);
+
+    switch (stmt->operation) {
+        case AlterOperationType::ADD_COLUMN:
+            if (stmt->columnDef && stmt->columnDef->name.empty()) {
+                throw SemanticError("Column name cannot be empty");
+            }
+            break;
+        case AlterOperationType::DROP_COLUMN:
+            if (stmt->oldColumnName.empty()) {
+                throw SemanticError("Column name cannot be empty");
+            }
+            // 检查列是否存在
+            checkColumnExists(stmt->tableName, stmt->oldColumnName);
+            break;
+        case AlterOperationType::MODIFY_COLUMN:
+        case AlterOperationType::RENAME_COLUMN:
+            if (stmt->columnDef && stmt->columnDef->name.empty() && !stmt->oldColumnName.empty()) {
+                // RENAME COLUMN 情况
+                checkColumnExists(stmt->tableName, stmt->oldColumnName);
+            } else if (stmt->columnDef) {
+                checkColumnExists(stmt->tableName, stmt->columnDef->name);
+            }
+            break;
+        case AlterOperationType::RENAME_TABLE:
+            if (stmt->newTableName.empty()) {
+                throw SemanticError("New table name cannot be empty");
+            }
+            break;
+        case AlterOperationType::ADD_CONSTRAINT:
+        case AlterOperationType::DROP_CONSTRAINT:
+            // 约束检查（简化实现）
+            break;
     }
 }
 

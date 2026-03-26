@@ -165,6 +165,34 @@ private:
 };
 
 // ============================================================
+// 函数调用表达式
+// ============================================================
+class FunctionCallExpr : public Expression {
+public:
+    FunctionCallExpr(const std::string& funcName, const std::vector<ExprPtr>& args)
+        : funcName_(funcName), args_(args) {
+        type_ = ASTNodeType::FUNCTION_CALL;
+    }
+
+    const std::string& getFuncName() const { return funcName_; }
+    const std::vector<ExprPtr>& getArgs() const { return args_; }
+
+    std::string toString() const override {
+        std::string result = funcName_ + "(";
+        for (size_t i = 0; i < args_.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += args_[i]->toString();
+        }
+        result += ")";
+        return result;
+    }
+
+private:
+    std::string funcName_;
+    std::vector<ExprPtr> args_;
+};
+
+// ============================================================
 // 表引用
 // ============================================================
 struct TableRef : public ASTNode {
@@ -334,6 +362,56 @@ public:
 
     std::string toString() const override {
         return "DROP " + objectType + " " + name;
+    }
+};
+
+// ============================================================
+// ALTER TABLE 语句
+// ============================================================
+
+// ALTER 操作类型
+enum class AlterOperationType {
+    ADD_COLUMN,
+    DROP_COLUMN,
+    MODIFY_COLUMN,
+    RENAME_COLUMN,
+    ADD_CONSTRAINT,
+    DROP_CONSTRAINT,
+    RENAME_TABLE
+};
+
+// 列修改操作
+struct AlterModifyColumn {
+    std::string oldName;
+    std::string newName;
+    DataType newType;
+    int newLength = 0;
+    bool notNull = false;
+};
+
+// ALTER TABLE 语句
+class AlterTableStmt : public ASTNode {
+public:
+    AlterTableStmt() : ASTNode(ASTNodeType::ALTER_STMT) {}
+
+    std::string tableName;
+    AlterOperationType operation;
+
+    // 用于 ADD/DROP/MODIFY COLUMN
+    std::shared_ptr<ColumnDefNode> columnDef;
+
+    // 用于 RENAME COLUMN
+    std::string oldColumnName;
+    std::string newColumnName;
+
+    // 用于 RENAME TABLE
+    std::string newTableName;
+
+    // 用于 ADD/DROP CONSTRAINT
+    std::shared_ptr<ConstraintDefNode> constraint;
+
+    std::string toString() const override {
+        return "ALTER TABLE " + tableName + " ...";
     }
 };
 

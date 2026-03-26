@@ -62,6 +62,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     if (checkKeyword("DELETE")) return parseDeleteStatement();
     if (checkKeyword("CREATE")) return parseCreateStatement();
     if (checkKeyword("DROP")) return parseDropStatement();
+    if (checkKeyword("ALTER")) return parseAlterStatement();
 
     throw MiniSQLException(
         ErrorCode::PARSER_SYNTAX_ERROR,
@@ -463,6 +464,208 @@ std::shared_ptr<CreateTableStmt> Parser::parseCreateStatement() {
     return stmt;
 }
 
+std::shared_ptr<AlterTableStmt> Parser::parseAlterStatement() {
+    auto stmt = std::make_shared<AlterTableStmt>();
+
+    expectKeyword("ALTER", "Expected ALTER");
+    expectKeyword("TABLE", "Expected TABLE after ALTER");
+
+    // 表名
+    if (!check(TokenType::IDENTIFIER)) {
+        throw MiniSQLException(ErrorCode::PARSER_MISSING_TOKEN, "Expected table name after ALTER TABLE");
+    }
+    stmt->tableName = current_.value;
+    advance();
+
+    // ALTER 操作类型
+    if (checkKeyword("ADD")) {
+        advance();
+        // ADD COLUMN 或 ADD CONSTRAINT
+        if (checkKeyword("COLUMN")) {
+            advance();
+            stmt->operation = AlterOperationType::ADD_COLUMN;
+            stmt->columnDef = std::make_shared<ColumnDefNode>();
+            stmt->columnDef->name = current_.value;
+            advance();
+            // 解析列类型
+            if (checkKeyword("INT") || checkKeyword("INTEGER")) {
+                stmt->columnDef->type = DataType::INT;
+                advance();
+            } else if (checkKeyword("VARCHAR")) {
+                stmt->columnDef->type = DataType::VARCHAR;
+                advance();
+                if (check(TokenType::LEFT_PAREN)) {
+                    advance();
+                    if (check(TokenType::INT_LITERAL)) {
+                        stmt->columnDef->length = std::stoi(current_.value);
+                        advance();
+                    }
+                    expect(TokenType::RIGHT_PAREN, "Expected ')' after length");
+                }
+            } else if (checkKeyword("DOUBLE") || checkKeyword("FLOAT")) {
+                stmt->columnDef->type = DataType::DOUBLE;
+                advance();
+            } else if (checkKeyword("DATE")) {
+                stmt->columnDef->type = DataType::DATE;
+                advance();
+            }
+            // 检查列约束
+            while (checkKeyword("NOT") || checkKeyword("PRIMARY") || checkKeyword("KEY") ||
+                   checkKeyword("UNIQUE") || checkKeyword("AUTO_INCREMENT")) {
+                if (checkKeyword("NOT")) {
+                    advance();
+                    expectKeyword("NULL", "Expected NULL after NOT");
+                    stmt->columnDef->notNull = true;
+                } else if (checkKeyword("PRIMARY") || checkKeyword("KEY")) {
+                    if (checkKeyword("PRIMARY")) advance();
+                    expectKeyword("KEY", "Expected KEY after PRIMARY");
+                    stmt->columnDef->primaryKey = true;
+                } else if (checkKeyword("UNIQUE")) {
+                    advance();
+                    stmt->columnDef->unique = true;
+                } else if (checkKeyword("AUTO_INCREMENT")) {
+                    advance();
+                    stmt->columnDef->autoIncrement = true;
+                }
+            }
+        } else if (checkKeyword("CONSTRAINT")) {
+            advance();
+            stmt->operation = AlterOperationType::ADD_CONSTRAINT;
+            stmt->constraint = std::make_shared<ConstraintDefNode>();
+            // 可选约束名
+            if (check(TokenType::IDENTIFIER)) {
+                stmt->constraint->name = current_.value;
+                advance();
+            }
+            // 约束类型
+            if (checkKeyword("PRIMARY") || checkKeyword("KEY")) {
+                if (checkKeyword("PRIMARY")) advance();
+                expectKeyword("KEY", "Expected KEY");
+                stmt->constraint->type = ConstraintType::PRIMARY_KEY;
+                // 列名
+                if (check(TokenType::LEFT_PAREN)) {
+                    advance();
+                    stmt->constraint->columns = parseIdentifierList();
+                    expect(TokenType::RIGHT_PAREN, "Expected ')'");
+                }
+            } else if (checkKeyword("UNIQUE")) {
+                advance();
+                stmt->constraint->type = ConstraintType::UNIQUE;
+                if (check(TokenType::LEFT_PAREN)) {
+                    advance();
+                    stmt->constraint->columns = parseIdentifierList();
+                    expect(TokenType::RIGHT_PAREN, "Expected ')'");
+                }
+            } else if (checkKeyword("FOREIGN") || checkKeyword("REFERENCES")) {
+                // 外键约束简化处理
+                if (checkKeyword("FOREIGN")) advance();
+                expectKeyword("REFERENCES", "Expected REFERENCES");
+                stmt->constraint->type = ConstraintType::FOREIGN_KEY;
+            }
+        } else {
+            // 默认为 ADD COLUMN（列名）
+            stmt->operation = AlterOperationType::ADD_COLUMN;
+            stmt->columnDef = std::make_shared<ColumnDefNode>();
+            stmt->columnDef->name = current_.value;
+            advance();
+            // 解析列类型
+            if (checkKeyword("INT") || checkKeyword("INTEGER")) {
+                stmt->columnDef->type = DataType::INT;
+                advance();
+            } else if (checkKeyword("VARCHAR")) {
+                stmt->columnDef->type = DataType::VARCHAR;
+                advance();
+            } else if (checkKeyword("DOUBLE") || checkKeyword("FLOAT")) {
+                stmt->columnDef->type = DataType::DOUBLE;
+                advance();
+            }
+        }
+    } else if (checkKeyword("DROP")) {
+        advance();
+        if (checkKeyword("COLUMN")) {
+            advance();
+            stmt->operation = AlterOperationType::DROP_COLUMN;
+            stmt->oldColumnName = current_.value;
+            advance();
+        } else if (checkKeyword("CONSTRAINT")) {
+            advance();
+            stmt->operation = AlterOperationType::DROP_CONSTRAINT;
+            stmt->constraint = std::make_shared<ConstraintDefNode>();
+            stmt->constraint->name = current_.value;
+            advance();
+        } else {
+            // 默认为 DROP COLUMN
+            stmt->operation = AlterOperationType::DROP_COLUMN;
+            stmt->oldColumnName = current_.value;
+            advance();
+        }
+    } else if (checkKeyword("MODIFY") || checkKeyword("CHANGE")) {
+        // MODIFY 或 CHANGE column
+        bool isChange = checkKeyword("CHANGE");
+        advance();
+        if (checkKeyword("COLUMN")) advance();
+        stmt->operation = AlterOperationType::MODIFY_COLUMN;
+        stmt->columnDef = std::make_shared<ColumnDefNode>();
+
+        if (isChange) {
+            // CHANGE old_name new_name type ...
+            stmt->columnDef->name = current_.value;
+            advance();
+            stmt->oldColumnName = stmt->columnDef->name;
+            stmt->newColumnName = current_.value;
+            advance();
+        } else {
+            stmt->columnDef->name = current_.value;
+            advance();
+        }
+
+        // 解析新类型
+        if (checkKeyword("INT") || checkKeyword("INTEGER")) {
+            stmt->columnDef->type = DataType::INT;
+            advance();
+        } else if (checkKeyword("VARCHAR")) {
+            stmt->columnDef->type = DataType::VARCHAR;
+            advance();
+            if (check(TokenType::LEFT_PAREN)) {
+                advance();
+                if (check(TokenType::INT_LITERAL)) {
+                    stmt->columnDef->length = std::stoi(current_.value);
+                    advance();
+                }
+                expect(TokenType::RIGHT_PAREN, "Expected ')'");
+            }
+        } else if (checkKeyword("DOUBLE") || checkKeyword("FLOAT")) {
+            stmt->columnDef->type = DataType::DOUBLE;
+            advance();
+        }
+        // 检查 NOT NULL
+        if (checkKeyword("NOT")) {
+            advance();
+            expectKeyword("NULL", "Expected NULL after NOT");
+            stmt->columnDef->notNull = true;
+        }
+    } else if (checkKeyword("RENAME")) {
+        advance();
+        if (checkKeyword("TO")) {
+            advance();
+            stmt->operation = AlterOperationType::RENAME_TABLE;
+            stmt->newTableName = current_.value;
+            advance();
+        } else if (checkKeyword("COLUMN")) {
+            advance();
+            stmt->operation = AlterOperationType::RENAME_COLUMN;
+            stmt->oldColumnName = current_.value;
+            advance();
+            expectKeyword("TO", "Expected TO");
+            stmt->newColumnName = current_.value;
+            advance();
+        }
+    }
+
+    match(TokenType::SEMICOLON);
+    return stmt;
+}
+
 std::shared_ptr<DropStmt> Parser::parseDropStatement() {
     auto stmt = std::make_shared<DropStmt>();
 
@@ -626,12 +829,29 @@ ExprPtr Parser::parsePrimaryExpression() {
         return std::make_shared<LiteralExpr>(value);
     }
 
-    // 列引用
-    if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-        std::string table;
-        std::string column = current_.value;
+    // 函数调用
+    if (check(TokenType::IDENTIFIER)) {
+        std::string name = current_.value;
         advance();
 
+        // 检查是否是函数调用（后面跟着左括号）
+        if (check(TokenType::LEFT_PAREN)) {
+            advance();
+
+            std::vector<ExprPtr> args;
+            // 解析参数列表
+            if (!check(TokenType::RIGHT_PAREN)) {
+                args.push_back(parseExpression());
+                while (match(TokenType::COMMA)) {
+                    args.push_back(parseExpression());
+                }
+            }
+            expect(TokenType::RIGHT_PAREN, "Expected ')' after function arguments");
+
+            return std::make_shared<FunctionCallExpr>(name, args);
+        }
+
+        // 不是函数调用，可能是列引用
         // 检查是否是 table.column 形式
         if (check(TokenType::DOT)) {
             advance();
@@ -639,12 +859,14 @@ ExprPtr Parser::parsePrimaryExpression() {
                 throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR,
                     "Expected identifier after '.'");
             }
-            table = column;
-            column = current_.value;
+            std::string table = name;
+            std::string column = current_.value;
             advance();
+            return std::make_shared<ColumnRef>(table, column);
         }
 
-        return std::make_shared<ColumnRef>(table, column);
+        // 普通列引用
+        return std::make_shared<ColumnRef>("", name);
     }
 
     // 括号表达式
@@ -668,11 +890,27 @@ std::shared_ptr<JoinClause> Parser::parseJoinClause() {
 }
 
 std::vector<ExprPtr> Parser::parseExpressionList() {
-    throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "ExpressionList not implemented yet");
+    std::vector<ExprPtr> exprs;
+    exprs.push_back(parseExpression());
+    while (match(TokenType::COMMA)) {
+        exprs.push_back(parseExpression());
+    }
+    return exprs;
 }
 
 std::vector<std::string> Parser::parseIdentifierList() {
-    throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "IdentifierList not implemented yet");
+    std::vector<std::string> ids;
+    if (check(TokenType::IDENTIFIER)) {
+        ids.push_back(current_.value);
+        advance();
+        while (match(TokenType::COMMA)) {
+            if (check(TokenType::IDENTIFIER)) {
+                ids.push_back(current_.value);
+                advance();
+            }
+        }
+    }
+    return ids;
 }
 
 }  // namespace parser
