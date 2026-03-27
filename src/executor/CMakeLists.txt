@@ -1,8 +1,16 @@
 add_library(executor
-    Executor.cpp
-    Expression.cpp
-    DDLExecutor.cpp
+    ExpressionEvaluator.cpp
+    ExecutionOperator.cpp
+    TableScanOperator.cpp
+    FilterOperator.cpp
+    ProjectOperator.cpp
+    NestedLoopJoinOperator.cpp
+    LimitOperator.cpp
+    SortOperator.cpp
+    AggregateOperator.cpp
     DMLExecutor.cpp
+    DDLExecutor.cpp
+    Executor.cpp
 )
 
 target_include_directories(executor PUBLIC

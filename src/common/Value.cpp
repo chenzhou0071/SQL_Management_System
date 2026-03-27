@@ -101,6 +101,20 @@ std::string Value::getString() const {
     }
 }
 
+bool Value::getBool() const {
+    if (isNull_) return false;
+    if (std::holds_alternative<std::string>(value_)) {
+        std::string val = std::get<std::string>(value_);
+        std::transform(val.begin(), val.end(), val.begin(),
+            [](unsigned char c) { return std::tolower(c); });
+        return val == "true" || val == "1" || val == "yes";
+    } else if (std::holds_alternative<int64_t>(value_)) {
+        return std::get<int64_t>(value_) != 0;
+    } else {
+        return std::get<double>(value_) != 0.0;
+    }
+}
+
 std::string Value::toString() const {
     if (isNull_) return "NULL";
     return getString();

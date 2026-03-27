@@ -1,5 +1,6 @@
 #include "Parser.h"
 #include "../common/Error.h"
+#include "../common/Logger.h"
 
 namespace minisql {
 namespace parser {
@@ -145,19 +146,17 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement() {
             tableRef->name = current_.value;
             advance();
 
-            // 检查别名
-            if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-                // 检查是否是 AS 关键字
-                if (!checkKeyword("AS")) {
+            // 检查别名 (只检查 AS 或标识符)
+            if (checkKeyword("AS")) {
+                advance();  // 跳过 AS
+                if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
                     tableRef->alias = current_.value;
                     advance();
-                } else {
-                    advance();  // 跳过 AS
-                    if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-                        tableRef->alias = current_.value;
-                        advance();
-                    }
                 }
+            } else if (check(TokenType::IDENTIFIER)) {
+                // 别名不需要 AS
+                tableRef->alias = current_.value;
+                advance();
             }
 
             stmt->fromTable = tableRef;
@@ -210,15 +209,16 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement() {
                 join->table->name = current_.value;
                 advance();
 
-                // 检查别名
-                if (check(TokenType::IDENTIFIER) || checkKeyword("AS")) {
-                    if (checkKeyword("AS")) {
-                        advance();
-                    }
-                    if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
+                // 检查别名 (只检查 AS 或标识符)
+                if (checkKeyword("AS")) {
+                    advance();  // 跳过 AS
+                    if (check(TokenType::IDENTIFIER)) {
                         join->table->alias = current_.value;
                         advance();
                     }
+                } else if (check(TokenType::IDENTIFIER)) {
+                    join->table->alias = current_.value;
+                    advance();
                 }
             }
 
@@ -231,9 +231,64 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement() {
         }
     }
 
-    // WHERE 子句（简化）
+    // WHERE 子句
     if (matchKeyword("WHERE")) {
         stmt->whereClause = parseExpression();
+    }
+
+    // GROUP BY 子句
+    if (matchKeyword("GROUP")) {
+        expectKeyword("BY", "Expected BY after GROUP");
+        while (!check(TokenType::EOF_TOKEN) && !checkKeyword("HAVING") && !checkKeyword("ORDER") && !checkKeyword("LIMIT")) {
+            ExprPtr expr = parseExpression();
+            stmt->groupBy.push_back(expr);
+            if (!match(TokenType::COMMA)) {
+                break;
+            }
+        }
+
+        // HAVING 子句
+        if (matchKeyword("HAVING")) {
+            stmt->havingClause = parseExpression();
+        }
+    }
+
+    // ORDER BY 子句
+    if (matchKeyword("ORDER")) {
+        expectKeyword("BY", "Expected BY after ORDER");
+        while (!check(TokenType::EOF_TOKEN) && !checkKeyword("LIMIT")) {
+            ExprPtr expr = parseExpression();
+            OrderByItem item;
+            item.expr = expr;
+            // 检查 ASC/DESC
+            if (checkKeyword("DESC")) {
+                item.ascending = false;
+                advance();
+            } else if (checkKeyword("ASC")) {
+                item.ascending = true;
+                advance();
+            }
+            stmt->orderBy.push_back(item);
+            if (!match(TokenType::COMMA)) {
+                break;
+            }
+        }
+    }
+
+    // LIMIT 子句
+    if (matchKeyword("LIMIT")) {
+        if (check(TokenType::INT_LITERAL)) {
+            stmt->limit = std::stoi(current_.value);
+            advance();
+        }
+    }
+
+    // OFFSET 子句
+    if (matchKeyword("OFFSET")) {
+        if (check(TokenType::INT_LITERAL)) {
+            stmt->offset = std::stoi(current_.value);
+            advance();
+        }
     }
 
     match(TokenType::SEMICOLON);

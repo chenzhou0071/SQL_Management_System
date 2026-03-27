@@ -105,6 +105,16 @@ bool FileIO::removeFile(const std::string& path) {
     }
 }
 
+bool FileIO::renameFile(const std::string& oldPath, const std::string& newPath) {
+    try {
+        fs::rename(oldPath, newPath);
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("FileIO", std::string("Failed to rename file: ") + e.what());
+        return false;
+    }
+}
+
 bool FileIO::writeToFile(const std::string& path, const std::string& content) {
     try {
         std::ofstream file(path);

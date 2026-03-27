@@ -229,6 +229,177 @@ Result<int> TableManager::getNextRowId(const std::string& dbName, const std::str
     return Result<int>(nextId);
 }
 
+// ==================== ALTER TABLE 操作 ====================
+
+Result<void> TableManager::addColumn(const std::string& dbName, const std::string& tableName, const ColumnDef& column) {
+    // 1. 获取表定义
+    auto tableDefResult = getTableDef(dbName, tableName);
+    if (tableDefResult.isError()) {
+        return Result<void>(tableDefResult.getError());
+    }
+    TableDef tableDef = *tableDefResult.getValue();
+
+    // 2. 检查列是否已存在
+    for (const auto& col : tableDef.columns) {
+        if (col.name == column.name) {
+            return Result<void>(MiniSQLException(ErrorCode::STORAGE_TABLE_EXISTS, "Column already exists: " + column.name));
+        }
+    }
+
+    // 3. 添加新列
+    tableDef.columns.push_back(column);
+
+    // 4. 保存更新后的表定义
+    std::string metaPath = getMetaPath(dbName, tableName);
+    std::string jsonStr = tableDefToJson(tableDef);
+    if (!FileIO::writeToFile(metaPath, jsonStr)) {
+        return Result<void>(MiniSQLException(ErrorCode::STORAGE_FILE_IO_ERROR, "Failed to update table meta"));
+    }
+
+    // 5. 为现有数据行添加默认值
+    std::string dataPath = getDataPath(dbName, tableName);
+    if (FileIO::existsFile(dataPath)) {
+        std::string content = FileIO::readFromFile(dataPath);
+        if (!content.empty()) {
+            std::string defaultVal = column.hasDefault ? column.defaultValue : "NULL";
+            std::string newContent;
+            std::istringstream stream(content);
+            std::string line;
+            bool first = true;
+            while (std::getline(stream, line)) {
+                if (line.empty()) continue;
+                if (!first) newContent += "\n";
+                newContent += line + "," + defaultVal;
+                first = false;
+            }
+            FileIO::writeToFile(dataPath, newContent);
+        }
+    }
+
+    LOG_INFO("TableManager", "Added column " + column.name + " to table " + tableName);
+    return Result<void>();
+}
+
+Result<void> TableManager::dropColumn(const std::string& dbName, const std::string& tableName, const std::string& columnName) {
+    // 1. 获取表定义
+    auto tableDefResult = getTableDef(dbName, tableName);
+    if (tableDefResult.isError()) {
+        return Result<void>(tableDefResult.getError());
+    }
+    TableDef tableDef = *tableDefResult.getValue();
+
+    // 2. 找到列索引
+    int colIndex = -1;
+    for (size_t i = 0; i < tableDef.columns.size(); ++i) {
+        if (tableDef.columns[i].name == columnName) {
+            colIndex = i;
+            break;
+        }
+    }
+
+    if (colIndex < 0) {
+        return Result<void>(MiniSQLException(ErrorCode::EXEC_COLUMN_NOT_FOUND, "Column not found: " + columnName));
+    }
+
+    // 3. 不能删除主键列
+    if (tableDef.columns[colIndex].primaryKey) {
+        return Result<void>(MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Cannot drop primary key column"));
+    }
+
+    // 4. 移除列
+    tableDef.columns.erase(tableDef.columns.begin() + colIndex);
+
+    // 5. 保存更新后的表定义
+    std::string metaPath = getMetaPath(dbName, tableName);
+    std::string jsonStr = tableDefToJson(tableDef);
+    if (!FileIO::writeToFile(metaPath, jsonStr)) {
+        return Result<void>(MiniSQLException(ErrorCode::STORAGE_FILE_IO_ERROR, "Failed to update table meta"));
+    }
+
+    // 6. 从数据文件中移除该列
+    std::string dataPath = getDataPath(dbName, tableName);
+    if (FileIO::existsFile(dataPath)) {
+        std::string content = FileIO::readFromFile(dataPath);
+        if (!content.empty()) {
+            std::string newContent;
+            std::istringstream stream(content);
+            std::string line;
+            bool firstLine = true;
+            while (std::getline(stream, line)) {
+                if (line.empty()) continue;
+
+                std::istringstream lineStream(line);
+                std::string cell;
+                std::vector<std::string> cells;
+                while (std::getline(lineStream, cell, ',')) {
+                    cells.push_back(cell);
+                }
+
+                // 移除对应列
+                if ((int)cells.size() > colIndex) {
+                    cells.erase(cells.begin() + colIndex);
+                }
+
+                // 重新拼接
+                std::string newLine;
+                for (size_t i = 0; i < cells.size(); ++i) {
+                    if (i > 0) newLine += ",";
+                    newLine += cells[i];
+                }
+
+                if (!firstLine) newContent += "\n";
+                newContent += newLine;
+                firstLine = false;
+            }
+            FileIO::writeToFile(dataPath, newContent);
+        }
+    }
+
+    LOG_INFO("TableManager", "Dropped column " + columnName + " from table " + tableName);
+    return Result<void>();
+}
+
+Result<void> TableManager::renameTable(const std::string& dbName, const std::string& oldName, const std::string& newName) {
+    // 1. 获取旧表定义
+    auto tableDefResult = getTableDef(dbName, oldName);
+    if (tableDefResult.isError()) {
+        return Result<void>(tableDefResult.getError());
+    }
+    TableDef tableDef = *tableDefResult.getValue();
+
+    // 2. 检查新表名是否已存在
+    auto existsResult = tableExists(dbName, newName);
+    if (existsResult.isError()) return Result<void>(existsResult.getError());
+    if (*existsResult.getValue()) {
+        return Result<void>(MiniSQLException(ErrorCode::STORAGE_TABLE_EXISTS, "Table already exists: " + newName));
+    }
+
+    // 3. 更新表定义
+    tableDef.name = newName;
+
+    // 4. 删除旧文件
+    std::string oldMetaPath = getMetaPath(dbName, oldName);
+    std::string oldDataPath = getDataPath(dbName, oldName);
+    std::string oldRowIdPath = getRowIdPath(dbName, oldName);
+
+    // 5. 创建新文件
+    std::string newMetaPath = getMetaPath(dbName, newName);
+    std::string newDataPath = getDataPath(dbName, newName);
+    std::string newRowIdPath = getRowIdPath(dbName, newName);
+
+    std::string jsonStr = tableDefToJson(tableDef);
+    if (!FileIO::writeToFile(newMetaPath, jsonStr)) {
+        return Result<void>(MiniSQLException(ErrorCode::STORAGE_FILE_IO_ERROR, "Failed to create new table meta"));
+    }
+
+    FileIO::renameFile(oldDataPath, newDataPath);
+    FileIO::renameFile(oldRowIdPath, newRowIdPath);
+    FileIO::removeFile(oldMetaPath);
+
+    LOG_INFO("TableManager", "Renamed table " + oldName + " to " + newName);
+    return Result<void>();
+}
+
 // ==================== 私有方法 ====================
 
 std::string TableManager::getMetaPath(const std::string& dbName, const std::string& tableName) {
@@ -385,6 +556,17 @@ Result<Row> TableManager::csvToRow(const std::string& csv, const TableDef& table
         // 去除引号（简单处理）
         if (!cell.empty() && cell[0] == '\'' && cell.back() == '\'') {
             cell = cell.substr(1, cell.size() - 2);
+            // 处理转义的撇号
+            std::string unescaped;
+            for (size_t i = 0; i < cell.size(); ++i) {
+                if (cell[i] == '\'' && i + 1 < cell.size() && cell[i + 1] == '\'') {
+                    unescaped += '\'';
+                    ++i;
+                } else {
+                    unescaped += cell[i];
+                }
+            }
+            cell = unescaped;
         }
 
         Value val = Value::parseFrom(cell, tableDef.columns[colIndex].type);

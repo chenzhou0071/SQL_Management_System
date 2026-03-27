@@ -43,6 +43,11 @@ public:
     // 获取下一行 ID（自增）
     Result<int> getNextRowId(const std::string& dbName, const std::string& tableName);
 
+    // ALTER TABLE 操作
+    Result<void> addColumn(const std::string& dbName, const std::string& tableName, const ColumnDef& column);
+    Result<void> dropColumn(const std::string& dbName, const std::string& tableName, const std::string& columnName);
+    Result<void> renameTable(const std::string& dbName, const std::string& oldName, const std::string& newName);
+
 private:
     TableManager() = default;
     ~TableManager() = default;

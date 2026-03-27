@@ -19,6 +19,7 @@ public:
     // 文件操作
     static bool existsFile(const std::string& path);
     static bool removeFile(const std::string& path);
+    static bool renameFile(const std::string& oldPath, const std::string& newPath);
     static bool writeToFile(const std::string& path, const std::string& content);
     static std::string readFromFile(const std::string& path);
     static bool appendToFile(const std::string& path, const std::string& content);
