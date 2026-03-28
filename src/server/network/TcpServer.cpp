@@ -2,6 +2,9 @@
 #include "TcpServer.h"
 #include "Reactor.h"
 #include "SqlProtocol.h"
+#include "../../transaction/TransactionManager.h"
+#include "../../executor/Executor.h"
+#include "../../parser/Parser.h"
 #include "../../common/Logger.h"
 #include <unistd.h>
 #include <signal.h>
@@ -27,26 +30,53 @@ TcpServer::TcpServer(int port, int threadCount)
     reactor_->setSqlHandler([this](int fd, const std::string& sql) {
         SqlResponse response;
 
-        // TODO: 调用执行器执行SQL
-        // 这里先实现简单的响应
-        if (sql == "SELECT 1;" || sql == "SELECT 1") {
-            response.success = true;
-            response.message = "Query OK";
-            response.rowCount = 1;
-            response.columns = {"1"};
-            response.rows = {{"1"}};
-        } else if (sql.find("SELECT") == 0) {
-            response.success = true;
-            response.message = "Query OK";
-            response.rowCount = 0;
-        } else if (sql == "SHOW TABLES;" || sql == "SHOW DATABASES;") {
-            response.success = true;
-            response.message = "Query OK";
-            response.rowCount = 0;
-        } else {
-            response.success = true;
-            response.message = "OK";
-            response.rowCount = 0;
+        try {
+            // 解析 SQL
+            auto parseResult = parser::Parser::parseString(sql);
+            if (!parseResult.isSuccess()) {
+                response.success = false;
+                response.message = "Parse error: " + parseResult.getError();
+                std::string resp = SqlProtocol::buildResponse(response);
+                ::send(fd, resp.c_str(), resp.size(), 0);
+                return;
+            }
+
+            auto stmt = parseResult.getValue();
+
+            // 获取或创建事务
+            auto* txnMgr = &transaction::TransactionManager::getInstance();
+            transaction::Transaction* txn = txnMgr->getCurrentTransaction();
+            if (!txn) {
+                txn = txnMgr->begin();
+            }
+
+            // 执行 SQL
+            executor::Executor executor(dataDir_);
+            auto execResult = executor.execute(txn, stmt);
+
+            if (!execResult.isSuccess()) {
+                response.success = false;
+                response.message = "Execution error: " + execResult.getError();
+                txnMgr->rollback();
+            } else {
+                response.success = true;
+                response.message = "Query OK";
+                response.rowCount = execResult.getValue();
+
+                // 获取结果集
+                auto& resultSets = executor.getResultSets();
+                if (!resultSets.empty() && resultSets[0]) {
+                    auto& resultSet = resultSets[0];
+                    response.columns = resultSet->columns;
+                    response.rows = resultSet->rows;
+                }
+
+                txnMgr->commit();
+            }
+
+        } catch (const std::exception& e) {
+            response.success = false;
+            response.message = std::string("Error: ") + e.what();
         }
 
         std::string resp = SqlProtocol::buildResponse(response);
