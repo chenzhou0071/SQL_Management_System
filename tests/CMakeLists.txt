@@ -161,3 +161,29 @@ add_test(NAME from_subquery_tests COMMAND test_from_subquery)
 add_executable(test_having test_having.cpp)
 target_link_libraries(test_having PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
 add_test(NAME having_tests COMMAND test_having)
+
+# ============================================
+# 服务器测试 (仅Linux服务器版本)
+# ============================================
+if(BUILD_SERVER)
+    # 并发测试
+    add_executable(test_concurrency tests/server/test_concurrency.cpp)
+    target_link_libraries(test_concurrency PRIVATE
+        server_concurrency
+        pthread
+    )
+
+    # 事务测试
+    add_executable(test_transaction tests/server/test_transaction.cpp)
+    target_link_libraries(test_transaction PRIVATE
+        server_transaction
+        pthread
+    )
+
+    # 网络测试
+    add_executable(test_network tests/server/test_network.cpp)
+    target_link_libraries(test_network PRIVATE
+        server_network
+        pthread
+    )
+endif()
