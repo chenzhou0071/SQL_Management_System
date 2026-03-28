@@ -12,22 +12,38 @@
 ### 1.1 目标
 
 为现有的 MiniSQL 单线程数据库添加:
-- **网络并发**: Reactor模式的TCP服务器,支持多客户端并发访问
+- **Linux服务器**: Reactor模式的TCP服务器,支持多客户端并发访问
 - **并发控制**: B+树读写锁、文件操作互斥锁、锁管理器
 - **事务管理**: BEGIN/COMMIT/ROLLBACK、读已提交隔离级别、WAL持久化
+- **Windows客户端**: Qt GUI界面,通过TCP连接Linux服务器
 
 ### 1.2 架构模式
 
 **客户端-服务器(C/S)架构:**
-- Windows: GUI客户端(Qt界面,用于开发调试)
-- Linux: 服务器(Reactor网络层,生产环境)
+- **Windows**: GUI客户端(Qt界面),只负责界面展示和用户交互
+- **Linux**: 服务器(Reactor网络层),负责SQL执行和并发控制
 
-### 1.3 设计原则
+**开发模式:**
+- Windows上编写代码(共享文件夹同步到Linux虚拟机)
+- Linux虚拟机上编译测试服务器
+- Windows GUI直接连接Linux服务器
 
-- **学习导向**: 实现完整展示数据库核心原理
+### 1.3 实现顺序
+
+**阶段1-3: Linux服务器** (优先完成)
+1. 并发控制层 (LockManager、B+树锁、FileIO锁)
+2. 事务管理层 (TransactionManager、WAL)
+3. Reactor网络层 (TcpServer、协议处理)
+
+**阶段4: Windows GUI客户端** (最后完成)
+4. Qt界面 + TcpClient
+
+### 1.4 设计原则
+
+- **服务器优先**: 先完成服务器,GUI自然对接
 - **渐进式开发**: 分阶段实现,每阶段可测试
 - **跨平台**: Windows开发,Linux部署
-- **向后兼容**: 不破坏现有单线程功能
+- **代码分离**: 服务器和客户端模块完全独立
 
 ---
 
@@ -75,13 +91,125 @@
 ### 2.2 模块依赖关系
 
 ```
-network (服务器)
-    ↓
-concurrency
-    ↓
-transaction
-    ↓
-executor → storage → parser → common
+服务器模块依赖:
+┌─────────────────────────────────────┐
+│  network (Reactor网络层)             │
+│    - Reactor/TcpServer/ThreadPool   │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  concurrency (并发控制)              │
+│    - LockManager                    │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  transaction (事务管理)              │
+│    - TransactionManager/WAL         │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  executor → storage → parser       │
+│    (现有SQL引擎,加锁改造)           │
+└─────────────────────────────────────┘
+
+客户端模块依赖:
+┌─────────────────────────────────────┐
+│  GUI (Qt界面)                       │
+│    - MainWindow                     │
+└──────────────┬──────────────────────┘
+               ↓
+┌─────────────────────────────────────┐
+│  TcpClient (网络客户端)             │
+│    - 连接Linux服务器                 │
+└─────────────────────────────────────┘
+```
+
+### 2.3 目录结构
+
+```
+MiniSQL/
+├── src/
+│   ├── common/              # 共享: 公共组件
+│   ├── parser/              # 共享: SQL解析器
+│   ├── optimizer/           # 共享: 查询优化器
+│   ├── executor/            # 共享: 查询执行器(需改造加锁)
+│   ├── storage/             # 共享: 存储引擎(需加锁)
+│   │
+│   ├── server/              # Linux服务器专用
+│   │   ├── concurrency/     # 并发控制
+│   │   │   ├── LockManager.h/cpp
+│   │   │   ├── RWLock.h
+│   │   │   └── CMakeLists.txt
+│   │   ├── transaction/     # 事务管理
+│   │   │   ├── TransactionManager.h/cpp
+│   │   │   ├── WALManager.h/cpp
+│   │   │   ├── Transaction.h
+│   │   │   └── CMakeLists.txt
+│   │   ├── network/         # Reactor网络
+│   │   │   ├── Reactor.h/cpp
+│   │   │   ├── TcpServer.h/cpp
+│   │   │   ├── TcpConnection.h/cpp
+│   │   │   ├── ThreadPool.h/cpp
+│   │   │   ├── SqlProtocol.h/cpp
+│   │   │   └── CMakeLists.txt
+│   │   ├── main_server.cpp  # 服务器入口
+│   │   └── CMakeLists.txt
+│   │
+│   └── client/              # Windows客户端专用
+│       ├── network/         # 网络客户端
+│       │   ├── TcpClient.h/cpp
+│       │   └── CMakeLists.txt
+│       ├── gui/             # Qt界面
+│       │   ├── MainWindow.h/cpp
+│       │   ├── dialogs/     # 对话框
+│       │   └── CMakeLists.txt
+│       ├── main.cpp         # 客户端入口
+│       └── CMakeLists.txt
+│
+├── tests/
+│   ├── server/              # Linux服务器测试
+│   │   ├── test_concurrency.cpp
+│   │   ├── test_transaction.cpp
+│   │   ├── test_network.cpp
+│   │   └── CMakeLists.txt
+│   └── client/              # Windows客户端测试
+│       └── test_tcp_client.cpp
+│
+└── docs/
+```
+
+### 2.4 编译配置
+
+**Windows (GUI客户端):**
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build .
+# 输出: bin/minisql.exe
+```
+
+**Linux (服务器):**
+```bash
+mkdir build && cd build
+cmake -DBUILD_SERVER=ON ..
+make
+# 输出: bin/minisql_server
+```
+
+### 2.5 平台差异处理
+
+**storage模块加锁方案:**
+
+```cpp
+// storage/BPlusTree.h
+#ifdef __linux__
+    std::shared_mutex treeMutex_;  // Linux版本加锁
+#endif
+
+// storage/FileIO.h
+#ifdef __linux__
+    static std::map<std::string, std::mutex> fileMutexes_;
+#endif
 ```
 
 ---
@@ -454,15 +582,137 @@ public:
 
 ## 6. GUI客户端设计
 
-### 6.1 功能模块
+### 6.1 主界面布局
 
-**MainWindow改造:**
-- 添加连接对话框 (服务器IP、端口)
-- SQL编辑器 (多行输入、语法高亮)
-- 结果显示 (表格展示、错误提示)
-- TCP客户端 (异步通信)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  MiniSQL  [服务器: 192.168.1.100:3306]        [主题] [刷新]     │
+├─────────────────────────────────────────────────────────────────┤
+│  [连接] [断开] [新建库] [新建表] [插入] [修改] [删除] [查询]     │
+├─────────────────┬───────────────────────────────────────────────┤
+│                 │                                               │
+│  ▼ 数据库       │   数据展示区                                  │
+│    ▶ test_db   │   ┌────┬──────┬──────┐                        │
+│        ├ users │   │ id │ name │ age  │                        │
+│      * orders  │   ├────┼──────┼──────┤                        │
+│        └ dept  │   │ 1  │ Tom  │ 20   │                        │
+│                 │   │ 2  │ Jane │ 25   │                        │
+│                 │   │ 3  │ Bob  │ 30   │                        │
+│                 │   └────┴──────┴──────┘                        │
+│                 │   (点击单元格可直接编辑)                        │
+│                 │                                               │
+├─────────────────┴───────────────────────────────────────────────┤
+│  SQL终端区                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │ mysql> SELECT * FROM users WHERE age > 18;                 ││
+│  │ ┌────┬──────┬──────┐                                      ││
+│  │ │ id │ name │ age  │                                      ││
+│  │ ├────┼──────┼──────┤                                      ││
+│  │ │ 1  │ Tom  │ 20   │                                      ││
+│  │ │ 2  │ Jane │ 25   │                                      ││
+│  │ └────┴──────┴──────┘                                      ││
+│  │ 2 rows in set (0.00s)                                      ││
+│  │                                                             ││
+│  │ mysql> _                                                   ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### 6.2 TcpClient实现
+### 6.2 交互方式
+
+1. **手动输入**: 在终端区输入SQL命令,按Enter执行
+2. **按钮操作**: 点击按钮 → 弹出对话框填写参数 → 自动生成SQL到终端执行
+3. **数据编辑**: 点击表格单元格直接修改 → 自动生成UPDATE语句执行
+4. **服务器连接**: 点击"连接"按钮 → 输入服务器IP和端口 → 连接到Linux服务器
+
+### 6.3 连接对话框
+
+```
+┌─────────────────────────────────────────────────────┐
+│              连接到服务器                            │
+├─────────────────────────────────────────────────────┤
+│  服务器地址: [192.168.1.100              ]           │
+│  端口:       [3306                       ]           │
+│                                                     │
+│  状态:       [未连接]                               │
+│                                                     │
+│              [取消]              [连接]             │
+└─────────────────────────────────────────────────────┘
+```
+
+### 6.4 工具栏功能
+
+所有按钮均为弹窗模式,点击按钮弹出对话框填写参数,确认后自动生成SQL到终端执行。
+
+| 按钮 | 功能 | 弹窗内容 |
+|------|------|----------|
+| 连接 | 连接到服务器 | 服务器IP、端口 |
+| 断开 | 断开当前连接 | 确认对话框 |
+| 新建库 | 创建数据库 | 输入库名 |
+| 新建表 | 创建表 | 表名、字段列表(名称、类型、约束) |
+| 插入 | 插入数据 | 各字段输入框(显示当前表结构) |
+| 修改 | 更新数据 | SET字段=新值 WHERE 条件 |
+| 删除 | 删除数据 | WHERE 条件 |
+| 查询 | SELECT查询 | 选择字段、WHERE条件、ORDER BY、LIMIT等 |
+| 刷新 | 重新加载当前表数据 | 自动执行SELECT * FROM 当前表 |
+| 主题 | 切换亮色/暗色主题 | 自动切换 |
+
+### 6.5 弹窗示例
+
+**查询弹窗**:
+```
+┌─────────────────────────────────────────────────────┐
+│              查询 - users                            │
+├─────────────────────────────────────────────────────┤
+│  字段选择:                                          │
+│  ☑ id   ☑ name   ☑ age   ☑ email                 │
+│                                                     │
+│  WHERE条件:                                         │
+│  字段: [age    ▼]  操作符: [>  ▼]  值: [18      ]  │
+│                                                     │
+│  ORDER BY:  [id ▼]  [ASC ▼]                        │
+│  LIMIT:     [10      ]                              │
+│                                                     │
+│            [取消]              [执行查询]           │
+└─────────────────────────────────────────────────────┘
+```
+
+### 6.6 功能模块实现
+
+**MainWindow核心类:**
+
+```cpp
+class MainWindow : public QMainWindow {
+private:
+    std::unique_ptr<NetworkClient> dbClient_;
+    QTableView* resultTable_;
+    QTextEdit* sqlTerminal_;
+    QTreeWidget* databaseTree_;
+
+    // 服务器连接
+    void connectToServer();
+    void disconnectFromServer();
+
+    // SQL执行
+    void executeSQL(const std::string& sql);
+    void displayResult(const Result& result);
+
+    // 表格操作
+    void createDatabase();
+    void createTable();
+    void insertData();
+    void updateData();
+    void deleteData();
+    void queryData();
+
+    // UI更新
+    void refreshDatabaseList();
+    void refreshTableData();
+    void switchTheme();
+};
+```
+
+**TcpClient实现:**
 
 ```cpp
 class TcpClient {
@@ -581,15 +831,21 @@ void WALManager::recover() {
 ```
 MiniSQL/
 ├── src/
-│   ├── common/              # 现有:公共组件
+│   ├─�� common/              # 现有:公共组件
 │   ├── storage/             # 现有:存储引擎(需要加锁)
 │   ├── parser/              # 现有:SQL解析器
 │   ├── optimizer/           # 现有:查询优化器
 │   ├── executor/            # 现有:查询执行器
 │   ├── transaction/         # 事务管理(完整实现)
 │   ├── concurrency/         # 新增:并发控制
-│   ├── network/             # 新增:网络层(仅Server)
-│   ├── application/         # GUI层(仅Client)
+│   ├── network/             # 新增:网络层
+│   │   ├── TcpClient.h/cpp      # GUI用
+│   │   ├── Reactor.h/cpp
+│   │   ├── TcpServer.h/cpp
+│   │   └── CMakeLists.txt
+│   ├── application/         # GUI层
+│   │   ├── MainWindow.h/cpp
+│   │   └── CMakeLists.txt
 │   ├── main.cpp             # GUI入口(Windows)
 │   └── main_server.cpp      # Server入口(Linux)
 ├── tests/                   # 测试
@@ -605,41 +861,103 @@ MiniSQL/
 
 ### 阶段1: 并发控制层 (1-2周)
 
+**目标:** 为存储引擎添加线程安全的并发控制
+
+**任务清单:**
 1. 实现RWLock、LockManager
-2. 修改BPlusTree、FileIO加锁
-3. 修改TableManager集成锁管理
-4. 编写测试
+2. 修改BPlusTree添加读写锁
+3. 修改FileIO添加文件互斥锁
+4. 修改TableManager集成锁管理
+5. 编写并发测试
+
+**验证标准:**
+- 多线程并发读写B+树不崩溃
+- 文件操作线程安全
+- 锁超时机制正常工作
 
 ### 阶段2: 事务管理 (1-2周)
 
+**目标:** 实现完整的事务管理功能和WAL持久化
+
+**任务清单:**
 1. 实现Transaction、TransactionManager
 2. 实现WALManager
 3. 修改执行器集成事务
 4. 实现BEGIN/COMMIT/ROLLBACK语法
-5. 编写测试
+5. 编写事务测试
+
+**验证标准:**
+- BEGIN/COMMIT/ROLLBACK正常工作
+- 崩溃后数据能恢复(WAL)
+- 并发事务隔离级别正确
 
 ### 阶段3: 网络层 (2-3周)
 
+**目标:** 实现Reactor模式的TCP服务器
+
+**任务清单:**
 1. 实现SqlProtocol、TcpConnection
 2. 实现ThreadPool、Reactor
 3. 实现TcpServer、main_server.cpp
-4. 编写测试
+4. 完善NetworkClient实现
+5. 编写网络测试
 
-### 阶段4: GUI客户端 (1周)
+**验证标准:**
+- telnet能连接并执行SQL
+- 多客户端并发访问不崩溃
+- 长连接稳定
 
-1. 实现TcpClient
-2. 修改MainWindow添加网络功能
-3. 测试与服务器通信
+---
+
+### 阶段4: GUI客户端 (2-3周)
+
+**目标:** 实现Windows GUI客户端,连接到Linux服务器
+
+**任务清单:**
+1. 设计MainWindow布局
+   - 连接对话框(服务器IP、端口)
+   - SQL编辑器(多行输入)
+   - 结果显示表格
+   - 表管理界面
+2. 实现NetworkClient
+   - TCP连接管理
+   - 异步通信
+3. 实现功能模块
+   - SQL执行和结果显示
+   - 表结构查看
+   - 查询历史
+4. UI美化
+
+**验证标准:**
+- GUI可以连接Linux服务器
+- SQL执行结果显示正确
+- 错误处理友好
+
+---
 
 ### 阶段5: 集成测试 (1周)
 
-1. 并发压力测试
-2. 事务隔离级别测试
-3. 持久化恢复测试
-4. 性能基准测试
-5. Bug修复
+**目标:** 端到端测试和性能优化
 
-**总时间估算:** 6-9周
+**任务清单:**
+1. GUI连接Linux服务器测试
+2. 并发压力测试
+
+**验证标准:**
+- 50个并发客户端稳定运行
+- 事务ACID特性完整
+- 崩溃恢复100%成功
+- 性能达到预期目标
+
+---
+
+**总时间估算:** 7-10周
+
+**关键里程碑:**
+- 3周后: 并发控制层完成
+- 5周后: 事务管理完成
+- 8周后: 网络服务器上线(telnet可测试)
+- 10周后: GUI客户端完成,系统完整可用
 
 ---
 

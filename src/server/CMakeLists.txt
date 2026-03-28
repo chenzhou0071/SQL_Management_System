@@ -1,0 +1,11 @@
+add_subdirectory(concurrency)
+add_subdirectory(transaction)
+add_subdirectory(network)
+
+add_library(server_concurrency STATIC IMPORTED)
+add_library(server_transaction STATIC IMPORTED)
+add_library(server_network STATIC IMPORTED)
+
+set_target_properties(server_concurrency PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/concurrency/libserver_concurrency.a)
+set_target_properties(server_transaction PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/transaction/libserver_transaction.a)
+set_target_properties(server_network PROPERTIES IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/network/libserver_network.a)
