@@ -32,16 +32,9 @@ TcpServer::TcpServer(int port, int threadCount)
 
         try {
             // 解析 SQL
-            auto parseResult = parser::Parser::parseString(sql);
-            if (!parseResult.isSuccess()) {
-                response.success = false;
-                response.message = "Parse error: " + parseResult.getError();
-                std::string resp = SqlProtocol::buildResponse(response);
-                ::send(fd, resp.c_str(), resp.size(), 0);
-                return;
-            }
-
-            auto stmt = parseResult.getValue();
+            parser::Lexer lexer(sql);
+            parser::Parser parser(lexer);
+            auto stmt = parser.parseStatement();
 
             // 执行 SQL
             auto& executor = executor::Executor::getInstance();
@@ -53,10 +46,20 @@ TcpServer::TcpServer(int port, int threadCount)
             } else {
                 response.success = true;
                 response.message = "Query OK";
-                response.rowCount = execResult.getValue();
 
-                // TODO: 获取结果集
-                // 当前 Executor 接口不支持直接获取结果集
+                // 获取列名和数据
+                auto& result = execResult.getValue();
+                response.rowCount = result.getRowCount();
+                response.columns = result.columnNames;
+
+                // 转换 Tuple -> vector<string>
+                for (auto& row : result.rows) {
+                    std::vector<std::string> rowStr;
+                    for (auto& val : row) {
+                        rowStr.push_back(val.toString());
+                    }
+                    response.rows.push_back(std::move(rowStr));
+                }
             }
 
         } catch (const std::exception& e) {
