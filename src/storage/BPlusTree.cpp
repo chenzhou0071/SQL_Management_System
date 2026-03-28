@@ -14,7 +14,14 @@ BPlusTree::BPlusTree(int order) : order_(order) {
 }
 
 bool BPlusTree::insert(int64_t key, int rowId) {
-    if (find(key) != -1) {
+#ifdef __linux__
+    RWLock::WriteGuard guard(rwLock_);
+#endif
+    return insertUnlocked(key, rowId);
+}
+
+bool BPlusTree::insertUnlocked(int64_t key, int rowId) {
+    if (findUnlocked(key) != -1) {
         return false;  // 键已存在
     }
 
@@ -112,6 +119,13 @@ std::shared_ptr<BPlusTreeNode> BPlusTree::insert(std::shared_ptr<BPlusTreeNode> 
 }
 
 int BPlusTree::find(int64_t key) {
+#ifdef __linux__
+    RWLock::ReadGuard guard(rwLock_);
+#endif
+    return findUnlocked(key);
+}
+
+int BPlusTree::findUnlocked(int64_t key) {
     auto node = root_;
 
     while (node) {
@@ -145,6 +159,13 @@ int BPlusTree::findChildIndex(std::shared_ptr<BPlusTreeNode> node, int64_t key) 
 }
 
 std::vector<int> BPlusTree::rangeSearch(int64_t min, int64_t max) {
+#ifdef __linux__
+    RWLock::ReadGuard guard(rwLock_);
+#endif
+    return rangeSearchUnlocked(min, max);
+}
+
+std::vector<int> BPlusTree::rangeSearchUnlocked(int64_t min, int64_t max) {
     std::vector<int> results;
 
     // 找到最小键的叶子节点
@@ -172,7 +193,14 @@ std::vector<int> BPlusTree::rangeSearch(int64_t min, int64_t max) {
 }
 
 bool BPlusTree::remove(int64_t key) {
-    if (find(key) == -1) {
+#ifdef __linux__
+    RWLock::WriteGuard guard(rwLock_);
+#endif
+    return removeUnlocked(key);
+}
+
+bool BPlusTree::removeUnlocked(int64_t key) {
+    if (findUnlocked(key) == -1) {
         return false;
     }
 

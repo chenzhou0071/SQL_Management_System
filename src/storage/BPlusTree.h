@@ -7,6 +7,10 @@
 #include <map>
 #include <functional>
 
+#ifdef __linux__
+#include "../../server/concurrency/RWLock.h"
+#endif
+
 namespace minisql {
 namespace storage {
 
@@ -60,6 +64,10 @@ private:
     int minKeys_;  // 最少键数 ⌈m/2⌉ - 1
     std::shared_ptr<BPlusTreeNode> root_;
 
+#ifdef __linux__
+    mutable RWLock rwLock_;
+#endif
+
     // 序列化辅助
     void serializeNode(const std::shared_ptr<BPlusTreeNode>& node, std::vector<std::string>& nodes, int parentIndex, int childIndex) const;
 
@@ -72,6 +80,12 @@ private:
     void merge(std::shared_ptr<BPlusTreeNode> node, int index);
     int findKey(std::shared_ptr<BPlusTreeNode> node, int64_t key);
     int findChildIndex(std::shared_ptr<BPlusTreeNode> node, int64_t key);
+
+    // 内部无锁查找（由外部调用者加锁）
+    int findUnlocked(int64_t key);
+    std::vector<int> rangeSearchUnlocked(int64_t min, int64_t max);
+    bool insertUnlocked(int64_t key, int rowId);
+    bool removeUnlocked(int64_t key);
 };
 
 }  // namespace storage
