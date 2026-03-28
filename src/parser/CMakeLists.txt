@@ -11,4 +11,6 @@ target_include_directories(parser PUBLIC
     ${CMAKE_SOURCE_DIR}/src/common
 )
 
-target_link_libraries(parser PRIVATE common storage Qt${QT_VERSION_MAJOR}::Core)
+if(NOT BUILD_SERVER)
+    target_link_libraries(parser PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+endif()

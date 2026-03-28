@@ -92,75 +92,77 @@ add_executable(test_ddl_executor test_ddl_executor.cpp)
 target_link_libraries(test_ddl_executor PRIVATE executor parser common storage test_utils)
 add_test(NAME ddl_executor_tests COMMAND test_ddl_executor)
 
-# 主执行器测试
-add_executable(test_executor test_executor.cpp)
-target_link_libraries(test_executor PRIVATE executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME executor_tests COMMAND test_executor)
+if(NOT BUILD_SERVER)
+    # 主执行器测试
+    add_executable(test_executor test_executor.cpp)
+    target_link_libraries(test_executor PRIVATE executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME executor_tests COMMAND test_executor)
 
-# 统计信息测试
-add_executable(test_statistics test_statistics.cpp)
-target_link_libraries(test_statistics PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME statistics_tests COMMAND test_statistics)
+    # 统计信息测试
+    add_executable(test_statistics test_statistics.cpp)
+    target_link_libraries(test_statistics PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME statistics_tests COMMAND test_statistics)
 
-# 索引选择器测试
-add_executable(test_index_selector test_index_selector.cpp)
-target_link_libraries(test_index_selector PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME index_selector_tests COMMAND test_index_selector)
+    # 索引选择器测试
+    add_executable(test_index_selector test_index_selector.cpp)
+    target_link_libraries(test_index_selector PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME index_selector_tests COMMAND test_index_selector)
 
-# 查询重写器测试
-add_executable(test_query_rewriter test_query_rewriter.cpp)
-target_link_libraries(test_query_rewriter PRIVATE optimizer parser common Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME query_rewriter_tests COMMAND test_query_rewriter)
+    # 查询重写器测试
+    add_executable(test_query_rewriter test_query_rewriter.cpp)
+    target_link_libraries(test_query_rewriter PRIVATE optimizer parser common Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME query_rewriter_tests COMMAND test_query_rewriter)
 
-# 规则优化器测试
-add_executable(test_rule_optimizer test_rule_optimizer.cpp)
-target_link_libraries(test_rule_optimizer PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME rule_optimizer_tests COMMAND test_rule_optimizer)
+    # 规则优化器测试
+    add_executable(test_rule_optimizer test_rule_optimizer.cpp)
+    target_link_libraries(test_rule_optimizer PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME rule_optimizer_tests COMMAND test_rule_optimizer)
 
-# 代价优化器测试
-add_executable(test_cost_optimizer test_cost_optimizer.cpp)
-target_link_libraries(test_cost_optimizer PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME cost_optimizer_tests COMMAND test_cost_optimizer)
+    # 代价优化器测试
+    add_executable(test_cost_optimizer test_cost_optimizer.cpp)
+    target_link_libraries(test_cost_optimizer PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME cost_optimizer_tests COMMAND test_cost_optimizer)
 
-# 计划生成器测试
-add_executable(test_plan_generator test_plan_generator.cpp)
-target_link_libraries(test_plan_generator PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME plan_generator_tests COMMAND test_plan_generator)
+    # 计划生成器测试
+    add_executable(test_plan_generator test_plan_generator.cpp)
+    target_link_libraries(test_plan_generator PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME plan_generator_tests COMMAND test_plan_generator)
 
-# EXPLAIN 处理器测试
-add_executable(test_explain test_explain.cpp)
-target_link_libraries(test_explain PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME explain_tests COMMAND test_explain)
+    # EXPLAIN 处理器测试
+    add_executable(test_explain test_explain.cpp)
+    target_link_libraries(test_explain PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME explain_tests COMMAND test_explain)
 
-# 子查询测试
-add_executable(test_subquery test_subquery.cpp)
-target_link_libraries(test_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME subquery_tests COMMAND test_subquery)
+    # 子查询测试
+    add_executable(test_subquery test_subquery.cpp)
+    target_link_libraries(test_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME subquery_tests COMMAND test_subquery)
 
-# 集成测试
-add_executable(test_integration test_integration.cpp)
-target_link_libraries(test_integration PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME integration_tests COMMAND test_integration)
+    # 集成测试
+    add_executable(test_integration test_integration.cpp)
+    target_link_libraries(test_integration PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME integration_tests COMMAND test_integration)
 
-# 外键约束测试
-add_executable(test_foreign_key test_foreign_key.cpp)
-target_link_libraries(test_foreign_key PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME foreign_key_tests COMMAND test_foreign_key)
+    # 外键约束测试
+    add_executable(test_foreign_key test_foreign_key.cpp)
+    target_link_libraries(test_foreign_key PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME foreign_key_tests COMMAND test_foreign_key)
 
-# JOIN 执行测试 (Phase 7)
-add_executable(test_join test_join.cpp)
-target_link_libraries(test_join PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME join_tests COMMAND test_join)
+    # JOIN 执行测试 (Phase 7)
+    add_executable(test_join test_join.cpp)
+    target_link_libraries(test_join PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME join_tests COMMAND test_join)
 
-# FROM 子查询测试 (Phase 7)
-add_executable(test_from_subquery test_from_subquery.cpp)
-target_link_libraries(test_from_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME from_subquery_tests COMMAND test_from_subquery)
+    # FROM 子查询测试 (Phase 7)
+    add_executable(test_from_subquery test_from_subquery.cpp)
+    target_link_libraries(test_from_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME from_subquery_tests COMMAND test_from_subquery)
 
-# HAVING 子句测试 (Phase 7)
-add_executable(test_having test_having.cpp)
-target_link_libraries(test_having PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
-add_test(NAME having_tests COMMAND test_having)
+    # HAVING 子句测试 (Phase 7)
+    add_executable(test_having test_having.cpp)
+    target_link_libraries(test_having PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+    add_test(NAME having_tests COMMAND test_having)
+endif()
 
 # ============================================
 # 服务器测试 (仅Linux服务器版本)

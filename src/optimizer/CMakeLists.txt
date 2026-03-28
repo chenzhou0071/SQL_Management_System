@@ -17,4 +17,7 @@ target_include_directories(optimizer PUBLIC
     ${CMAKE_SOURCE_DIR}/src/executor
 )
 
-target_link_libraries(optimizer PRIVATE common storage parser executor Qt${QT_VERSION_MAJOR}::Core)
+target_link_libraries(optimizer PRIVATE common storage parser executor)
+if(NOT BUILD_SERVER)
+    target_link_libraries(optimizer PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+endif()
