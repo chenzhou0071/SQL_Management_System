@@ -68,6 +68,7 @@ bool LockManager::acquireTableLock(const std::string& table, LockType type) {
 void LockManager::releaseTableLock(const std::string& table) {
     // 表锁的生命周期由 LockManager 管理,这里不需要主动释放
     // 实际使用中使用 ReadGuard/WriteGuard 自动管理
+    (void)table;  // suppress unused parameter warning
 }
 
 bool LockManager::acquireIndexLock(const std::string& index, LockType type) {
@@ -96,6 +97,7 @@ bool LockManager::acquireIndexLock(const std::string& index, LockType type) {
 
 void LockManager::releaseIndexLock(const std::string& index) {
     // 索引锁由 LockManager 管理生命周期
+    (void)index;  // suppress unused parameter warning
 }
 
 void LockManager::acquireFileLock(const std::string& filePath) {

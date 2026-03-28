@@ -5,6 +5,7 @@
 #include "../../common/Logger.h"
 #include <unistd.h>
 #include <signal.h>
+#include <sys/socket.h>
 
 namespace minisql {
 

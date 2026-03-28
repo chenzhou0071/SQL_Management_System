@@ -6,6 +6,7 @@
 #include <vector>
 #include <functional>
 #include <atomic>
+#include <thread>
 
 namespace minisql {
 
