@@ -2,10 +2,10 @@
 #include "TcpServer.h"
 #include "Reactor.h"
 #include "SqlProtocol.h"
-#include "../../transaction/TransactionManager.h"
-#include "../../executor/Executor.h"
-#include "../../parser/Parser.h"
-#include "../../common/Logger.h"
+#include "../transaction/TransactionManager.h"
+#include "../../../executor/Executor.h"
+#include "../../../parser/Parser.h"
+#include "../../../common/Logger.h"
 #include <unistd.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -43,35 +43,20 @@ TcpServer::TcpServer(int port, int threadCount)
 
             auto stmt = parseResult.getValue();
 
-            // 获取或创建事务
-            auto* txnMgr = &transaction::TransactionManager::getInstance();
-            transaction::Transaction* txn = txnMgr->getCurrentTransaction();
-            if (!txn) {
-                txn = txnMgr->begin();
-            }
-
             // 执行 SQL
-            executor::Executor executor(dataDir_);
-            auto execResult = executor.execute(txn, stmt);
+            auto& executor = executor::Executor::getInstance();
+            auto execResult = executor.execute(stmt.get());
 
             if (!execResult.isSuccess()) {
                 response.success = false;
                 response.message = "Execution error: " + execResult.getError();
-                txnMgr->rollback();
             } else {
                 response.success = true;
                 response.message = "Query OK";
                 response.rowCount = execResult.getValue();
 
-                // 获取结果集
-                auto& resultSets = executor.getResultSets();
-                if (!resultSets.empty() && resultSets[0]) {
-                    auto& resultSet = resultSets[0];
-                    response.columns = resultSet->columns;
-                    response.rows = resultSet->rows;
-                }
-
-                txnMgr->commit();
+                // TODO: 获取结果集
+                // 当前 Executor 接口不支持直接获取结果集
             }
 
         } catch (const std::exception& e) {
