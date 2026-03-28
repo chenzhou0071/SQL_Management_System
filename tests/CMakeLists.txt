@@ -170,6 +170,7 @@ if(BUILD_SERVER)
     add_executable(test_concurrency ${CMAKE_CURRENT_SOURCE_DIR}/server/test_concurrency.cpp)
     target_link_libraries(test_concurrency PRIVATE
         server_concurrency
+        common
         pthread
     )
 
@@ -177,6 +178,7 @@ if(BUILD_SERVER)
     add_executable(test_transaction ${CMAKE_CURRENT_SOURCE_DIR}/server/test_transaction.cpp)
     target_link_libraries(test_transaction PRIVATE
         server_transaction
+        common
         pthread
     )
 
@@ -184,6 +186,7 @@ if(BUILD_SERVER)
     add_executable(test_network ${CMAKE_CURRENT_SOURCE_DIR}/server/test_network.cpp)
     target_link_libraries(test_network PRIVATE
         server_network
+        common
         pthread
     )
 endif()
