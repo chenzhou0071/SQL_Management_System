@@ -6,6 +6,7 @@
 #include "../../executor/Executor.h"
 #include "../../parser/Parser.h"
 #include "../../common/Logger.h"
+#include "../../common/Error.h"
 #include <unistd.h>
 #include <signal.h>
 #include <sys/socket.h>
@@ -42,29 +43,35 @@ TcpServer::TcpServer(int port, int threadCount)
 
             if (!execResult.isSuccess()) {
                 response.success = false;
-                response.message = "Execution error: " + execResult.getError();
+                response.message = execResult.getError().what();
             } else {
                 response.success = true;
                 response.message = "Query OK";
 
                 // 获取列名和数据
-                auto& result = execResult.getValue();
-                response.rowCount = result.getRowCount();
-                response.columns = result.columnNames;
+                auto* result = execResult.getValue();
+                if (result) {
+                    response.rowCount = result->getRowCount();
+                    response.columns = result->columnNames;
 
-                // 转换 Tuple -> vector<string>
-                for (auto& row : result.rows) {
-                    std::vector<std::string> rowStr;
-                    for (auto& val : row) {
-                        rowStr.push_back(val.toString());
+                    // 转换 Tuple -> vector<string>
+                    for (auto& row : result->rows) {
+                        std::vector<std::string> rowStr;
+                        for (auto& val : row) {
+                            rowStr.push_back(val.toString());
+                        }
+                        response.rows.push_back(std::move(rowStr));
                     }
-                    response.rows.push_back(std::move(rowStr));
                 }
             }
 
+        } catch (const MiniSQLException& e) {
+            response.success = false;
+            response.message = e.what();
         } catch (const std::exception& e) {
             response.success = false;
-            response.message = std::string("Error: ") + e.what();
+            response.message = std::string("Internal error: ") + e.what();
+            LOG_ERROR("TcpServer", "Unhandled exception: " + std::string(e.what()));
         }
 
         std::string resp = SqlProtocol::buildResponse(response);

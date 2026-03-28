@@ -62,6 +62,7 @@ if(BUILD_SERVER)
     target_link_libraries(minisql_server
         PRIVATE
             common
+            -Wl,--start-group
             storage
             parser
             executor
@@ -69,6 +70,7 @@ if(BUILD_SERVER)
             server_concurrency
             server_transaction
             server_network
+            -Wl,--end-group
             pthread
     )
 

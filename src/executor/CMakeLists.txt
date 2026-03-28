@@ -4,14 +4,14 @@ add_library(executor
     TableScanOperator.cpp
     FilterOperator.cpp
     ProjectOperator.cpp
-    NestedLoopJoinOperator.cpp
-    SubqueryScanOperator.cpp
     LimitOperator.cpp
     SortOperator.cpp
     AggregateOperator.cpp
     DMLExecutor.cpp
     DDLExecutor.cpp
     Executor.cpp
+    NestedLoopJoinOperator.cpp
+    SubqueryScanOperator.cpp
 )
 
 target_include_directories(executor PUBLIC
@@ -22,7 +22,7 @@ target_include_directories(executor PUBLIC
     ${CMAKE_SOURCE_DIR}/src/parser
 )
 
-target_link_libraries(executor PRIVATE common storage optimizer parser)
+target_link_libraries(executor PRIVATE common storage parser optimizer)
 if(NOT BUILD_SERVER)
     target_link_libraries(executor PRIVATE Qt${QT_VERSION_MAJOR}::Core)
 endif()
