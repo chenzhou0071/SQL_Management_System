@@ -53,7 +53,6 @@ if(BUILD_SERVER)
     # ========================================
     # Linux服务器版本
     # ========================================
-    add_subdirectory(src/transaction)
     add_subdirectory(src/server)
 
     add_executable(minisql_server
@@ -67,7 +66,6 @@ if(BUILD_SERVER)
             parser
             executor
             optimizer
-            transaction
             server_concurrency
             server_transaction
             server_network
