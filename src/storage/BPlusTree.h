@@ -8,7 +8,7 @@
 #include <functional>
 
 #ifdef __linux__
-#include "../../server/concurrency/RWLock.h"
+#include "../server/concurrency/RWLock.h"
 #endif
 
 namespace minisql {

@@ -4,7 +4,7 @@
 #include <vector>
 
 #ifdef __linux__
-#include "../../server/concurrency/LockManager.h"
+#include "../server/concurrency/LockManager.h"
 #endif
 
 namespace minisql {
