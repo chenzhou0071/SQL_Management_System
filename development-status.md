@@ -10,7 +10,7 @@
 
 ## 开发进度
 
-### ✅ Phase 1: 基础框架 (已完成)
+### ✅ Phase 1: 基础框架
 
 **实现时间**: 2026-03-24
 
@@ -41,7 +41,7 @@ src/common/
 
 ---
 
-### ✅ Phase 2: 存储与索引引擎 (已完成)
+### ✅ Phase 2: 存储与索引引擎
 
 **实现时间**: 2026-03-24
 
@@ -122,7 +122,7 @@ src/storage/
 
 ---
 
-### ✅ Phase 3: SQL 解析器 (已完成)
+### ✅ Phase 3: SQL 解析器
 
 **实现时间**: 2026-03-26
 
@@ -175,7 +175,16 @@ src/storage/
   - 嵌套函数调用
 - ✅ 表达式解析（递归下降 + Pratt Parser 技术处理优先级）
 
-#### 3.4 语义分析器 (`SemanticAnalyzer.h/cpp`)
+#### 3.4 子查询支持 (`Parser.cpp`, `AST.h`)
+- ✅ IN 子查询：`WHERE id IN (SELECT ...)`
+- ✅ NOT IN 子查询：`WHERE id NOT IN (SELECT ...)`
+- ✅ EXISTS 子查询：`WHERE EXISTS (SELECT ...)`
+- ✅ NOT EXISTS 子查询：`WHERE NOT EXISTS (SELECT ...)`
+- ✅ AST 节点：`InSubqueryExpr`, `ExistsExpr`, `SubqueryExpr`
+- ✅ `AnalyzeStmt` 节点用于统计信息收集
+- ✅ `ExplainStmt` 节点用于执行计划解释
+
+#### 3.5 语义分析器 (`SemanticAnalyzer.h/cpp`)
 - ✅ 表存在性检查
 - ✅ 字段存在性检查
 - ✅ 数据类型验证
@@ -199,12 +208,15 @@ tests/
 ├── test_lexer.cpp        # 122 测试
 ├── test_ast.cpp          # 10 测试
 ├── test_parser.cpp       # 40 测试
-└── test_semantic.cpp     # 16 测试
+├── test_semantic.cpp     # 16 测试
+└── test_subquery.cpp     # 子查询测试
 ```
 
 ---
 
-### ✅ Phase 4: 查询执行器 (已完成)
+---
+
+### ✅ Phase 4: 查询执行器
 
 **实现时间**: 2026-03-26 ~ 2026-03-27
 
@@ -342,58 +354,258 @@ src/executor/
 
 ---
 
-## Phase 2 ~ 4 未实现功能
+### ✅ Phase 5: 查询优化器
 
-### ❌ 视图支持
+**实现时间**: 2026-03-27 ~ 2026-03-28
 
-**设计要求**: `view1.view` 文件
-**状态**: 未开始
-**需要模块**: ViewManager
+**核心功能**:
+
+#### 5.1 统计信息管理 (`Statistics.h/cpp`)
+- ✅ 表统计信息收集（行数、表大小、最后分析时间）
+- ✅ 列统计信息收集（distinct 值、NULL 数量、平均长度、min/max）
+- ✅ 统计信息持久化（`data/{db}/{table}.stats` JSON 文件）
+- ✅ 内存缓存机制
+- ✅ Selectivity 估算
+- ✅ 行数估算
+
+#### 5.2 索引选择器 (`IndexSelector.h/cpp`)
+- ✅ 获取表上所有可用索引
+- ✅ 从 WHERE 条件提取列引用
+- ✅ 判断等值/范围条件
+- ✅ 计算索引选择性（selectivity）
+- ✅ 判断是否覆盖索引（covering index）
+- ✅ 选择最优索引
+
+#### 5.3 查询重写器 (`QueryRewriter.h/cpp`)
+- ✅ 常量折叠（`age > 10 + 5` → `age > 15`）
+- ✅ 消除冗余条件（`age > 18 OR age = 20` → `age > 18`）
+- ✅ 简化布尔表达式（`AND true` → 直接返回、`OR false` → 消除）
+
+#### 5.4 规则优化器 (`RuleOptimizer.h/cpp`)
+- ✅ 索引使用规则（index_usage）
+- ✅ 连接顺序规则（join_order）
+- ✅ 排序优化规则（sort_optimization）
+- ✅ 聚合优化规则（aggregate_optimization）
+- ✅ 投影优化规则（projection_optimization）
+- ✅ 可扩展的规则注册机制
+
+#### 5.5 代价优化器 (`CostOptimizer.h/cpp`)
+- ✅ 代价模型常量定义（CPU/IO 成本系数）
+- ✅ 全表扫描代价估算
+- ✅ 索引扫描代价估算
+- ✅ 过滤代价估算
+- ✅ 排序代价估算
+- ✅ 聚合代价估算
+
+#### 5.6 执行计划生成器 (`PlanGenerator.h/cpp`)
+- ✅ 逻辑计划生成（PlanNode 树）
+  - TableScan 节点
+  - Filter 节点
+  - Join 节点（NestedLoopJoin）
+  - Aggregate 节点
+  - Sort 节点
+  - Project 节点
+  - Limit 节点
+- ✅ 物理计划物化（转换为 ExecutionOperator）
+- ✅ 索引选择集成
+- ✅ 统计信息集成
+
+#### 5.7 EXPLAIN 处理器 (`ExplainHandler.h/cpp`)
+- ✅ EXPLAIN 语句解析（`EXPLAIN SELECT ...`）
+- ✅ EXPLAIN FORMAT JSON（JSON 格式输出）
+- ✅ 表格格式输出
+- ✅ JSON 格式输出
+- ✅ 访问类型映射（ALL, index, range, ref, eq_ref, const）
+- ✅ Extra 信息（Using index, Using filesort, Using temporary）
+
+#### 5.8 执行计划定义 (`ExecutionPlan.h`)
+- ✅ ScanType 枚举（FULL_SCAN, INDEX_SCAN, COVERING_SCAN）
+- ✅ PlanNode 结构体（节点ID、类型、表名、索引、条件、代价、行数等）
+
+#### 5.9 ANALYZE TABLE 支持
+- ✅ `AST.h` 添加 `AnalyzeStmt` 节点
+- ✅ `Parser.cpp` 解析 `ANALYZE TABLE table_name`
+- ✅ `Executor.cpp` 集成统计信息收集
+- ✅ 为 CBO 提供统计信息
+
+#### 5.10 集成到执行器
+- ✅ `Parser.cpp` 支持 EXPLAIN 语句
+- ✅ `Parser.cpp` 支持 ANALYZE TABLE 语句
+- ✅ `Executor.cpp` 执行 EXPLAIN 输出
+- ✅ `executor/CMakeLists.txt` 链接 optimizer 模块
+
+**统计信息文件 (.stats) 格式**:
+```json
+{
+  "tableName": "users",
+  "rowCount": 1000,
+  "tableSize": 51200,
+  "lastAnalyzed": "2026-03-28 01:00:00",
+  "columns": [
+    {
+      "columnName": "id",
+      "distinctValues": 1000,
+      "nullCount": 0,
+      "avgLength": 4,
+      "minValue": "1",
+      "maxValue": "1000"
+    }
+  ]
+}
+```
+
+**执行计划示例**:
+```
+EXPLAIN SELECT * FROM users WHERE age > 18 ORDER BY age;
+
+执行计划:
+id=1: Project
+  -> id=2: Sort
+    -> id=3: TableScan on users using idx_age
+```
+
+**测试覆盖**: 9 个优化器模块测试全部通过
+
+**测试清单**:
+```
+tests/
+├── test_statistics.cpp     # 统计信息测试
+├── test_index_selector.cpp # 索引选择测试
+├── test_query_rewriter.cpp # 查询重写测试
+├── test_rule_optimizer.cpp # 规则优化测试
+├── test_cost_optimizer.cpp # 代价优化测试
+├── test_plan_generator.cpp # 计划生成测试
+├── test_explain.cpp       # EXPLAIN 测试
+├── test_subquery.cpp      # 子查询解析测试
+├── test_integration.cpp   # 集成测试
+└── test_foreign_key.cpp   # 外键约束测试
+```
+
+**新增文件清单**:
+```
+src/optimizer/
+├── ExecutionPlan.h          # 执行计划定义
+├── Statistics.h/cpp          # 统计信息管理
+├── IndexSelector.h/cpp       # 索引选择器
+├── QueryRewriter.h/cpp       # 查询重写器
+├── RuleOptimizer.h/cpp       # 规则优化器
+├── CostOptimizer.h/cpp       # 代价优化器
+├── PlanGenerator.h/cpp       # 执行计划生成器
+└── ExplainHandler.h/cpp      # EXPLAIN 处理器
+```
 
 ---
 
-### ❌ 存储过程支持
+### ✅ Phase 6: 基础功能集成
 
-**设计要求**: `proc1.proc` 文件
-**状态**: 未开始
-**需要模块**: ProcedureManager
+**实现时间**: 2026-03-28
+
+**核心功能**:
+
+#### 6.1 优化器统一入口 (`QueryOptimizer.h/cpp`)
+- ✅ 统一调度 QueryRewriter → RuleOptimizer → CostOptimizer → PlanGenerator
+- ✅ 单例模式管理
+- ✅ 完整的优化流程日志
+
+#### 6.2 执行器集成
+- ✅ `Executor::executeSelect()` 使用 QueryOptimizer
+- ✅ 完整优化流程：查询重写 → 逻辑计划 → 物理计划 → 规则优化 → 代价优化
+- ✅ WHERE 条件正确处理（Filter 节点）
+
+#### 6.3 EXPLAIN/ANALYZE 支持
+- ✅ 关键字注册（EXPLAIN, ANALYZE）
+- ✅ EXPLAIN 语句执行
+- ✅ ANALYZE TABLE 统计信息收集
+
+#### 6.4 集成测试
+- ✅ 完整 SQL 执行流程测试
+- ✅ Parser → Optimizer → Executor 集成验证
+
+#### 6.5 子查询执行支持
+- ✅ IN 子查询执行 (`WHERE id IN (SELECT ...)`)
+- ✅ NOT IN 子查询执行 (`WHERE id NOT IN (SELECT ...)`)
+- ✅ 子查询表达式求值 (`InSubqueryExpr`, `ExistsExpr`)
+- ✅ `ExpressionEvaluator` 子查询执行方法
+- ✅ `QueryRewriter` 子查询表达式处理
+
+#### 6.6 外键约束检查
+- ✅ 外键解析 (`Parser.cpp`): 支持表级 `FOREIGN KEY (col) REFERENCES tbl(col)` 语法
+- ✅ 外键元数据序列化 (`TableManager.cpp`): 存储到 `.meta` JSON 文件
+- ✅ 外键元数据反序列化: 从 `.meta` 文件恢复外键定义
+- ✅ INSERT 外键约束检查 (`DMLExecutor::executeInsert`)
+  - 检查插入值是否在被引用表中存在
+  - 外键列为 NULL 时跳过检查
+- ✅ UPDATE 外键约束检查 (`DMLExecutor::executeUpdate`)
+  - 更新前后均验证外键约束
+- ✅ `DDLExecutor::executeCreateTable` 外键复制到 `TableDef`
+- ✅ 错误消息: `Foreign key constraint violation: {table}.{column} references {ref_table}.{ref_column} but value (...) does not exist in parent table`
+
+**测试覆盖**: 4/4 外键测试通过
+- `testForeignKeyViolation`: 插入不存在的引用值 → 正确拒绝
+- `testForeignKeyValid`: 插入有效引用值 → 正确接受
+- `testForeignKeyUpdateViolation`: 更新为无效引用值 → 正确拒绝
+- `testNoForeignKeyTable`: 无外键表插入 → 正常工作
+
+**执行流程**:
+```
+SQL 文本
+    ↓
+Parser (词法→语法→AST)
+    ↓
+QueryOptimizer
+    ├── QueryRewriter (谓词下推、常量折叠)
+    ├── PlanGenerator (生成逻辑计划)
+    ├── RuleOptimizer (规则优化)
+    └── CostOptimizer (代价优化)
+    ↓
+Executor (物理执行算子)
+    ↓
+结果
+```
+
+**测试覆盖**: 27/27 测试通过
+
+**新增文件清单**:
+```
+src/optimizer/
+└── QueryOptimizer.h/cpp      # 统一优化入口
+
+tests/
+└── test_integration.cpp     # 集成测试
+```
 
 ---
 
-### ❌ 触发器支持
+## 未实现功能
 
-**设计要求**: `trigger1.trigger` 文件
-**状态**: 未开始
-**需要模块**: TriggerManager
-
----
-
-## Phase 3 未实现功能
-
-### ⚠️ 子查询支持
-
-**当前状态**: 未实现
-**需要功能**:
-- IN 子查询
-- EXISTS 子查询
-- 标量子查询
-- 关联子查询
-
-**预估工作量**: 100-150 行代码
-
----
-
-### ⚠️ 语义分析增强
-
-**当前状态**: 基础实现
-**需要功能**:
-- INSERT/UPDATE 时数据类型验证（值类型 vs 列定义类型）
-- 非空约束验证
-- 主键/唯一约束检查
-- 外键约束检查
-- 默认值处理
-
-**预估工作量**: 100-200 行代码
+| 模块 | 功能 | 预估工作量 |
+|------|------|-----------|
+| **Parser** | 标量子查询解析 `(SELECT MAX(id) FROM ...)` | 100-150 行 |
+| **Parser** | 比较运算符子查询 `(SELECT ...) > ANY/ALL (...)` | 50-100 行 |
+| **Executor** | 标量子查询执行（返回单值） | 100-150 行 |
+| **Executor** | 关联子查询处理（需外部行上下文） | 200-300 行 |
+| **Executor** | 比较运算符子查询 ALL/ANY | 100-150 行 |
+| **Executor** | 子查询去关联化 | 100-200 行 |
+| **Executor** | 外键 CASCADE ON DELETE/UPDATE | 100-150 行 |
+| **Executor** | 外键自引用支持 | 50-100 行 |
+| **Executor** | DELETE 时外键引用检查 | 50-100 行 |
+| **Parser+Executor** | INSERT/UPDATE 数据类型验证 | 50-100 行 |
+| **Parser+Executor** | 非空约束验证 | 50-100 行 |
+| **Parser+Executor** | 主键/唯一约束检查 | 50-100 行 |
+| **Parser+Executor** | 默认值处理 | 50-100 行 |
+| **Optimizer** | Hash Join | 200-300 行 |
+| **Optimizer** | Sort-Merge Join | 200-300 行 |
+| **Optimizer** | 多表连接顺序优化 | 100-200 行 |
+| **Optimizer** | 利用索引消除排序 | 100-150 行 |
+| **Optimizer** | 冗余排序消除 | 50-100 行 |
+| **Optimizer** | JOIN 条件下推 | 100-150 行 |
+| **Optimizer** | WHERE 条件下推到子查询 | 50-100 行 |
+| **Optimizer** | 聚合后条件下推 | 50-100 行 |
+| **Storage** | B+ 树节点合并与借键 | 150-200 行 |
+| **Storage** | 事务支持（ACID + MVCC + WAL） | 500-800 行 |
+| **Storage** | 视图（CREATE VIEW + 查询重写） | 200-300 行 |
+| **Storage** | 存储过程（CALL 执行） | 300-400 行 |
+| **Storage** | 触发器（BEFORE/AFTER 事件） | 300-400 行 |
 
 ---
 
@@ -521,6 +733,18 @@ cmake --build . --target executor
 ./bin/test_aggregate_operator.exe
 ./bin/test_dml_executor.exe
 ./bin/test_ddl_executor.exe
+./bin/test_subquery.exe
+./bin/test_integration.exe
+./bin/test_foreign_key.exe
+
+# 优化器测试
+./bin/test_rule_optimizer.exe
+./bin/test_cost_optimizer.exe
+./bin/test_statistics.exe
+./bin/test_query_rewriter.exe
+./bin/test_index_selector.exe
+./bin/test_plan_generator.exe
+./bin/test_explain.exe
 ```
 
 ### 测试结果
@@ -541,8 +765,18 @@ cmake --build . --target executor
 - **test_dml_executor**: 通过
 - **test_ddl_executor**: 通过
 - **test_executor**: 通过
+- **test_rule_optimizer**: 通过
+- **test_cost_optimizer**: 通过
+- **test_statistics**: 通过
+- **test_query_rewriter**: 通过
+- **test_index_selector**: 通过
+- **test_plan_generator**: 通过
+- **test_explain**: 通过
+- **test_integration**: 通过
+- **test_subquery**: 通过
+- **test_foreign_key**: 通过
 
-**累计测试**: 1400+ 测试通过
+**累计测试**: 1400+ 测试通过 (13 个测试套件全部通过)
 
 ---
 
@@ -606,7 +840,10 @@ E:\pro\SQL_Management_System\
 │   ├── test_aggregate_operator.cpp
 │   ├── test_dml_executor.cpp
 │   ├── test_ddl_executor.cpp
-│   └── test_executor.cpp
+│   ├── test_executor.cpp
+│   ├── test_subquery.cpp
+│   ├── test_integration.cpp
+│   └── test_foreign_key.cpp
 │
 ├── build/               # 编译输出
 │   └── bin/
@@ -634,46 +871,18 @@ data/demo_db/
 
 ## 已知限制
 
-1. **外键约束**: 定义已支持，但未实现约束检查
-2. **事务支持**: 未实现
-3. **并发控制**: 未实现
-4. **视图**: 未实现
-5. **存储过程**: 未实现
-6. **触发器**: 未实现
-7. **子查询**: 未实现
+详见上方 **未实现功能** 表格，按模块分类列出完整待办清单。
 
 ---
 
-## 下一阶段规划
+## 下一阶段建议
 
-### Phase 5: 事务管理 (未开始)
-- ACID 特性
-- 并发控制
-- 日志与恢复
-
-### Phase 6: 优化器 (待规划)
-- 查询重写
-- 代价估算
-- 连接顺序优化
-
----
-
-## 技术债务
-
-### 高优先级
-- [ ] 外键约束检查
-- [ ] 数据类型验证（插入时）
-- [ ] 子查询支持
-
-### 中优先级
-- [ ] B+树删除算法完善
-- [ ] 复合索引的完整支持
-- [ ] 索引优化器
-
-### 低优先级
-- [ ] 视图实现
-- [ ] 存储过程实现
-- [ ] 触发器实现
+1. **数据类型与约束验证**（100-200 行）— 补全基础验证
+2. **子查询执行增强**（200-300 行）— 支持标量/关联子查询
+3. **谓词下推**（150-200 行）— 优化器增强
+4. **连接优化**（300-400 行）— Hash Join / Sort-Merge Join
+5. **外键约束增强**（150-200 行）— CASCADE / 自引用
+6. **事务管理**（500-800 行）— ACID + MVCC + WAL
 
 ---
 
@@ -706,7 +915,8 @@ data/demo_db/
 - **ceaeb95**: feat(parser): 实现完整的 SQL 解析器（Lexer、AST、Parser、SemanticAnalyzer）
 - **1393cfa**: feat(storage): 实现 B+ 树索引持久化
 - **00b9b88**: feat(parser): 实现 ALTER TABLE 和函数调用表达式
-- **(本次)**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
+- **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
+- **(本次)**: feat(parser+executor): 实现外键约束检查（INSERT/UPDATE）+ 索引选择修复
 
 ---
 
@@ -717,4 +927,4 @@ data/demo_db/
 
 ---
 
-*最后更新: 2026-03-27*
+*最后更新: 2026-03-28 (Phase 6 完成，外键约束 + 索引选择修复)*

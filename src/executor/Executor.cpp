@@ -9,6 +9,10 @@
 #include "SortOperator.h"
 #include "DMLExecutor.h"
 #include "DDLExecutor.h"
+#include "../optimizer/QueryOptimizer.h"
+#include "../optimizer/ExplainHandler.h"
+#include "../optimizer/PlanGenerator.h"
+#include "../optimizer/Statistics.h"
 #include "../common/Logger.h"
 #include <stdexcept>
 #include <algorithm>
@@ -84,6 +88,62 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt) {
                 return executeSelect(static_cast<parser::SelectStmt*>(stmt));
             }
 
+            case parser::ASTNodeType::EXPLAIN_STMT: {
+                auto explainStmt = dynamic_cast<parser::ExplainStmt*>(stmt);
+                auto selectStmt = std::dynamic_pointer_cast<parser::SelectStmt>(explainStmt->innerStatement);
+                if (!selectStmt) {
+                    return Result<ExecutionResult>(
+                        MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "EXPLAIN requires a SELECT statement"));
+                }
+
+                // 生成 EXPLAIN 输出
+                auto explainResult = optimizer::ExplainHandler::explain(currentDatabase_, selectStmt.get());
+                if (explainResult.isError()) {
+                    return Result<ExecutionResult>(explainResult.getError());
+                }
+
+                ExecutionResult result;
+                result.rows.push_back({});
+
+                // 根据格式输出
+                if (explainStmt->formatJSON) {
+                    result.rows[0].push_back(
+                        Value(optimizer::ExplainHandler::formatJSON(*explainResult.getValue())));
+                } else {
+                    result.rows[0].push_back(
+                        Value(optimizer::ExplainHandler::formatTable(*explainResult.getValue())));
+                }
+                return Result<ExecutionResult>(result);
+            }
+
+            case parser::ASTNodeType::ANALYZE_STMT: {
+                auto analyzeStmt = dynamic_cast<parser::AnalyzeStmt*>(stmt);
+
+                // 调用统计信息收集
+                auto analyzeResult = optimizer::Statistics::getInstance().analyzeTable(
+                    currentDatabase_, analyzeStmt->tableName);
+
+                ExecutionResult result;
+                if (analyzeResult.isError()) {
+                    return Result<ExecutionResult>(analyzeResult.getError());
+                }
+
+                // 返回成功信息
+                result.rows.push_back({
+                    Value("Table"),
+                    Value("Op"),
+                    Value("Msg_type"),
+                    Value("Msg_text")
+                });
+                result.rows.push_back({
+                    Value(analyzeStmt->tableName),
+                    Value("analyze"),
+                    Value("status"),
+                    Value("OK")
+                });
+                return Result<ExecutionResult>(result);
+            }
+
             case parser::ASTNodeType::CREATE_STMT: {
                 auto createStmt = dynamic_cast<parser::CreateTableStmt*>(stmt);
                 return DDLExecutor::executeCreateTable(currentDatabase_, createStmt);
@@ -125,8 +185,15 @@ Result<ExecutionResult> Executor::executeSelect(parser::SelectStmt* stmt) {
         return Result<ExecutionResult>(error);
     }
 
-    // 构建执行计划
-    OperatorPtr root = buildExecutionPlan(stmt);
+    // ========== 使用 QueryOptimizer 进行完整优化流程 ==========
+    LOG_INFO("Executor", "Starting optimized query execution");
+
+    auto optimizeResult = optimizer::QueryOptimizer::optimize(currentDatabase_, stmt);
+    if (optimizeResult.isError()) {
+        return Result<ExecutionResult>(optimizeResult.getError());
+    }
+
+    OperatorPtr root = *optimizeResult.getValue();
     if (!root) {
         return Result<ExecutionResult>(
             MiniSQLException(ErrorCode::EXEC_ERROR_BASE, "Failed to build execution plan"));

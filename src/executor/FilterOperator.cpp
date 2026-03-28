@@ -5,8 +5,13 @@ namespace minisql {
 namespace executor {
 
 FilterOperator::FilterOperator(OperatorPtr child, parser::ExprPtr filterExpr)
-    : child_(child), filterExpr_(filterExpr), isOpen_(false) {
+    : child_(child), filterExpr_(filterExpr), isOpen_(false), currentDatabase_("default") {
     children_.push_back(child);
+}
+
+void FilterOperator::setCurrentDatabase(const std::string& dbName) {
+    currentDatabase_ = dbName;
+    evaluator_.setCurrentDatabase(dbName);
 }
 
 FilterOperator::~FilterOperator() {

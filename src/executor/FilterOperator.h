@@ -36,11 +36,15 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 设置当前数据库 (用于子查询)
+    void setCurrentDatabase(const std::string& dbName);
+
 private:
     OperatorPtr child_;
     parser::ExprPtr filterExpr_;
     ExpressionEvaluator evaluator_;
     bool isOpen_;
+    std::string currentDatabase_;
 
     // 构建行上下文用于表达式求值
     RowContext buildRowContext(const Tuple& row);

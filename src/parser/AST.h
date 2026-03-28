@@ -9,6 +9,9 @@
 namespace minisql {
 namespace parser {
 
+// 前向声明
+class SelectStmt;
+
 // ============================================================
 // AST 节点类型枚举
 // ============================================================
@@ -25,6 +28,8 @@ enum class ASTNodeType {
     ALTER_STMT,
     USE_STMT,
     SHOW_STMT,
+    EXPLAIN_STMT,
+    ANALYZE_STMT,
 
     // 表达式节点
     EXPRESSION,
@@ -33,6 +38,9 @@ enum class ASTNodeType {
     LITERAL_EXPR,
     COLUMN_REF,
     FUNCTION_CALL,
+    SUBQUERY_EXPR,    // 子查询表达式
+    IN_SUBQUERY_EXPR,  // IN (SELECT ...) 表达式
+    EXISTS_EXPR,       // EXISTS (SELECT ...) 表达式
 
     // 子句节点
     SELECT_CLAUSE,
@@ -193,6 +201,74 @@ private:
 };
 
 // ============================================================
+// 子查询表达式 (SELECT ...)
+// ============================================================
+class SubqueryExpr : public Expression {
+public:
+    SubqueryExpr(std::shared_ptr<SelectStmt> query)
+        : query_(query) {
+        type_ = ASTNodeType::SUBQUERY_EXPR;
+    }
+
+    std::shared_ptr<SelectStmt> getQuery() const { return query_; }
+
+    std::string toString() const override {
+        return "(SELECT ...)";
+    }
+
+private:
+    std::shared_ptr<SelectStmt> query_;
+};
+
+// ============================================================
+// IN 子查询表达式 (column IN (SELECT ...))
+// ============================================================
+class InSubqueryExpr : public Expression {
+public:
+    InSubqueryExpr(ExprPtr left, std::shared_ptr<SelectStmt> query, bool notIn = false)
+        : left_(left), query_(query), notIn_(notIn) {
+        type_ = ASTNodeType::IN_SUBQUERY_EXPR;
+    }
+
+    ExprPtr getLeft() const { return left_; }
+    std::shared_ptr<SelectStmt> getQuery() const { return query_; }
+    bool isNotIn() const { return notIn_; }
+
+    std::string toString() const override {
+        std::string op = notIn_ ? "NOT IN" : "IN";
+        return left_->toString() + " " + op + " (SELECT ...)";
+    }
+
+private:
+    ExprPtr left_;
+    std::shared_ptr<SelectStmt> query_;
+    bool notIn_;  // true for NOT IN, false for IN
+};
+
+// ============================================================
+// EXISTS 子查询表达式 (EXISTS (SELECT ...))
+// ============================================================
+class ExistsExpr : public Expression {
+public:
+    ExistsExpr(std::shared_ptr<SelectStmt> query, bool notExists = false)
+        : query_(query), notExists_(notExists) {
+        type_ = ASTNodeType::EXISTS_EXPR;
+    }
+
+    std::shared_ptr<SelectStmt> getQuery() const { return query_; }
+    bool isNotExists() const { return notExists_; }
+
+    std::string toString() const override {
+        std::string op = notExists_ ? "NOT EXISTS" : "EXISTS";
+        return op + " (SELECT ...)";
+    }
+
+private:
+    std::shared_ptr<SelectStmt> query_;
+    bool notExists_;  // true for NOT EXISTS, false for EXISTS
+};
+
+// ============================================================
 // 表引用
 // ============================================================
 struct TableRef : public ASTNode {
@@ -333,6 +409,16 @@ struct ConstraintDefNode : public ASTNode {
     ConstraintDefNode() : ASTNode(ASTNodeType::CONSTRAINT_DEF) {}
 };
 
+// 表级索引定义
+struct IndexDefNode : public ASTNode {
+    std::string name;
+    std::vector<std::string> columns;
+    std::string type = "BTREE";
+    bool unique = false;
+
+    IndexDefNode() : ASTNode(ASTNodeType::UNKNOWN) {}
+};
+
 class CreateTableStmt : public ASTNode {
 public:
     CreateTableStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false) {}
@@ -340,9 +426,11 @@ public:
     std::string table;
     std::vector<std::shared_ptr<ColumnDefNode>> columns;
     std::vector<std::shared_ptr<ConstraintDefNode>> constraints;
+    std::vector<IndexDef> indexes;  // 表级索引定义
     bool ifNotExists;
     std::string engine;
     std::string comment;
+    std::vector<ForeignKeyDef> foreignKeys;  // 外键定义
 
     std::string toString() const override {
         return "CREATE TABLE " + table + " ...";
@@ -442,6 +530,35 @@ public:
 
     std::string toString() const override {
         return "SHOW " + objectType;
+    }
+};
+
+// ============================================================
+// EXPLAIN 语句
+// ============================================================
+class ExplainStmt : public ASTNode {
+public:
+    ExplainStmt() : ASTNode(ASTNodeType::EXPLAIN_STMT) {}
+
+    std::shared_ptr<ASTNode> innerStatement;  // 被解释的内部语句
+    bool formatJSON = false;                 // 是否使用 JSON 格式
+
+    std::string toString() const override {
+        return "EXPLAIN ...";
+    }
+};
+
+// ============================================================
+// ANALYZE TABLE 语句
+// ============================================================
+class AnalyzeStmt : public ASTNode {
+public:
+    AnalyzeStmt() : ASTNode(ASTNodeType::ANALYZE_STMT) {}
+
+    std::string tableName;  // 要分析的表名
+
+    std::string toString() const override {
+        return "ANALYZE TABLE " + tableName;
     }
 };
 

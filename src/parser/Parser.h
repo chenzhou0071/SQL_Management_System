@@ -29,6 +29,8 @@ private:
     // 解析语句
     std::shared_ptr<ASTNode> parseUseStatement();
     std::shared_ptr<ASTNode> parseShowStatement();
+    std::shared_ptr<ASTNode> parseExplainStatement();
+    std::shared_ptr<ASTNode> parseAnalyzeStatement();
     std::shared_ptr<SelectStmt> parseSelectStatement();
     std::shared_ptr<InsertStmt> parseInsertStatement();
     std::shared_ptr<UpdateStmt> parseUpdateStatement();

@@ -62,6 +62,16 @@ Result<ExecutionResult> DDLExecutor::executeCreateTable(const std::string& dbNam
         tableDef.columns.push_back(convertColumnDef(*colNode));
     }
 
+    // 复制外键定义
+    for (const auto& fk : stmt->foreignKeys) {
+        tableDef.foreignKeys.push_back(fk);
+    }
+
+    // 复制索引定义
+    for (const auto& idx : stmt->indexes) {
+        tableDef.indexes.push_back(idx);
+    }
+
     auto result = tableMgr.createTable(dbName, tableDef);
 
     ExecutionResult execResult;

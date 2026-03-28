@@ -114,6 +114,8 @@ void Keywords::initKeywords() {
     keywords_["COMMENT"] = TokenType::KEYWORD;
     keywords_["TRUE"] = TokenType::KEYWORD;
     keywords_["FALSE"] = TokenType::KEYWORD;
+    keywords_["EXPLAIN"] = TokenType::KEYWORD;
+    keywords_["ANALYZE"] = TokenType::KEYWORD;
 
     initialized_ = true;
 }

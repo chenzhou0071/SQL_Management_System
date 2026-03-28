@@ -1,4 +1,9 @@
 #include "ExpressionEvaluator.h"
+#include "TableScanOperator.h"
+#include "FilterOperator.h"
+#include "ProjectOperator.h"
+#include "AggregateOperator.h"
+#include "LimitOperator.h"
 #include "../common/Logger.h"
 #include <algorithm>
 #include <cmath>
@@ -35,6 +40,12 @@ Result<Value> ExpressionEvaluator::evaluate(parser::ExprPtr expr) {
 
         case parser::ASTNodeType::FUNCTION_CALL:
             return evaluateFunction(static_cast<parser::FunctionCallExpr*>(expr.get()));
+
+        case parser::ASTNodeType::IN_SUBQUERY_EXPR:
+            return evaluateInSubquery(static_cast<parser::InSubqueryExpr*>(expr.get()));
+
+        case parser::ASTNodeType::EXISTS_EXPR:
+            return evaluateExists(static_cast<parser::ExistsExpr*>(expr.get()));
 
         default:
             MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "Unknown expression type");
@@ -354,6 +365,126 @@ Result<Value> ExpressionEvaluator::evaluateScalarFunction(const std::string& fun
 
     MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "Unknown scalar function: " + funcName);
     return Result<Value>(error);
+}
+
+Result<std::vector<Value>> ExpressionEvaluator::executeSubquery(parser::SelectStmt* subquery) {
+    if (!subquery) {
+        return Result<std::vector<Value>>(MiniSQLException(
+            ErrorCode::EXEC_INVALID_VALUE, "NULL subquery"));
+    }
+
+    std::vector<Value> results;
+
+    // 获取子查询的表名
+    if (!subquery->fromTable) {
+        return Result<std::vector<Value>>(results);  // 空结果
+    }
+
+    std::string tableName = subquery->fromTable->name;
+    std::string dbName = currentDatabase_.empty() ? "default" : currentDatabase_;
+
+    // 构建简单的算子树
+    OperatorPtr scan = std::make_shared<TableScanOperator>(dbName, tableName);
+
+    // 添加 WHERE 过滤
+    if (subquery->whereClause) {
+        scan = std::make_shared<FilterOperator>(scan, subquery->whereClause);
+    }
+
+    // 添加聚合（如果有）
+    if (!subquery->selectItems.empty()) {
+        auto firstItem = subquery->selectItems[0];
+        if (firstItem->getType() == parser::ASTNodeType::FUNCTION_CALL) {
+            // 聚合函数，需要使用 AggregateOperator
+            // 简化处理：直接扫描获取所有值
+        }
+        // 添加投影
+        scan = std::make_shared<ProjectOperator>(scan, subquery->selectItems);
+    }
+
+    // 添加 LIMIT
+    if (subquery->limit >= 0) {
+        scan = std::make_shared<LimitOperator>(scan, subquery->limit, subquery->offset);
+    }
+
+    // 执行算子树
+    auto openResult = scan->open();
+    if (!openResult.isSuccess()) {
+        return Result<std::vector<Value>>(openResult.getError());
+    }
+
+    while (true) {
+        auto nextResult = scan->next();
+        if (!nextResult.isSuccess()) {
+            scan->close();
+            return Result<std::vector<Value>>(nextResult.getError());
+        }
+
+        auto tuple = *nextResult.getValue();
+        if (!tuple) {
+            break;  // EOF
+        }
+
+        // 获取第一个列的值
+        if (!tuple->empty()) {
+            results.push_back(tuple->at(0));
+        }
+    }
+
+    scan->close();
+    return Result<std::vector<Value>>(results);
+}
+
+Result<Value> ExpressionEvaluator::evaluateInSubquery(parser::InSubqueryExpr* expr) {
+    if (!expr) {
+        return Result<Value>(MiniSQLException(
+            ErrorCode::EXEC_INVALID_VALUE, "NULL IN subquery expression"));
+    }
+
+    // 求值左边的列
+    auto leftResult = evaluate(expr->getLeft());
+    if (!leftResult.isSuccess()) {
+        return Result<Value>(leftResult.getError());
+    }
+    const Value& leftValue = *leftResult.getValue();
+
+    // 执行子查询获取值列表
+    auto subqueryResult = executeSubquery(expr->getQuery().get());
+    if (subqueryResult.isError()) {
+        return Result<Value>(subqueryResult.getError());
+    }
+    const std::vector<Value>& values = *subqueryResult.getValue();
+
+    // 检查左边值是否在子查询结果中
+    bool found = false;
+    for (const auto& val : values) {
+        if (leftValue == val) {
+            found = true;
+            break;
+        }
+    }
+
+    bool result = expr->isNotIn() ? !found : found;
+    return Result<Value>(Value(result));
+}
+
+Result<Value> ExpressionEvaluator::evaluateExists(parser::ExistsExpr* expr) {
+    if (!expr) {
+        return Result<Value>(MiniSQLException(
+            ErrorCode::EXEC_INVALID_VALUE, "NULL EXISTS expression"));
+    }
+
+    // 执行子查询
+    auto subqueryResult = executeSubquery(expr->getQuery().get());
+    if (subqueryResult.isError()) {
+        return Result<Value>(subqueryResult.getError());
+    }
+
+    const std::vector<Value>& values = *subqueryResult.getValue();
+    bool exists = !values.empty();
+
+    bool result = expr->isNotExists() ? !exists : exists;
+    return Result<Value>(Value(result));
 }
 
 } // namespace executor

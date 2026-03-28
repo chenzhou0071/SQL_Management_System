@@ -26,6 +26,9 @@ public:
     // 设置当前行上下文 (用于列引用)
     void setRowContext(const RowContext& context);
 
+    // 设置当前数据库 (用于子查询)
+    void setCurrentDatabase(const std::string& dbName) { currentDatabase_ = dbName; }
+
     // 获取当前行上下文
     const RowContext& getRowContext() const { return rowContext_; }
 
@@ -60,7 +63,17 @@ private:
     // 标量函数求值
     Result<Value> evaluateScalarFunction(const std::string& funcName, const std::vector<Value>& args);
 
+    // IN 子查询求值
+    Result<Value> evaluateInSubquery(parser::InSubqueryExpr* expr);
+
+    // EXISTS 子查询求值
+    Result<Value> evaluateExists(parser::ExistsExpr* expr);
+
+    // 执行子查询并返回结果
+    Result<std::vector<Value>> executeSubquery(parser::SelectStmt* subquery);
+
     RowContext rowContext_;
+    std::string currentDatabase_;  // 用于子查询执行
 };
 
 } // namespace executor

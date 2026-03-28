@@ -96,3 +96,53 @@ add_test(NAME ddl_executor_tests COMMAND test_ddl_executor)
 add_executable(test_executor test_executor.cpp)
 target_link_libraries(test_executor PRIVATE executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
 add_test(NAME executor_tests COMMAND test_executor)
+
+# 统计信息测试
+add_executable(test_statistics test_statistics.cpp)
+target_link_libraries(test_statistics PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME statistics_tests COMMAND test_statistics)
+
+# 索引选择器测试
+add_executable(test_index_selector test_index_selector.cpp)
+target_link_libraries(test_index_selector PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME index_selector_tests COMMAND test_index_selector)
+
+# 查询重写器测试
+add_executable(test_query_rewriter test_query_rewriter.cpp)
+target_link_libraries(test_query_rewriter PRIVATE optimizer parser common Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME query_rewriter_tests COMMAND test_query_rewriter)
+
+# 规则优化器测试
+add_executable(test_rule_optimizer test_rule_optimizer.cpp)
+target_link_libraries(test_rule_optimizer PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME rule_optimizer_tests COMMAND test_rule_optimizer)
+
+# 代价优化器测试
+add_executable(test_cost_optimizer test_cost_optimizer.cpp)
+target_link_libraries(test_cost_optimizer PRIVATE optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME cost_optimizer_tests COMMAND test_cost_optimizer)
+
+# 计划生成器测试
+add_executable(test_plan_generator test_plan_generator.cpp)
+target_link_libraries(test_plan_generator PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME plan_generator_tests COMMAND test_plan_generator)
+
+# EXPLAIN 处理器测试
+add_executable(test_explain test_explain.cpp)
+target_link_libraries(test_explain PRIVATE optimizer executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME explain_tests COMMAND test_explain)
+
+# 子查询测试
+add_executable(test_subquery test_subquery.cpp)
+target_link_libraries(test_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME subquery_tests COMMAND test_subquery)
+
+# 集成测试
+add_executable(test_integration test_integration.cpp)
+target_link_libraries(test_integration PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME integration_tests COMMAND test_integration)
+
+# 外键约束测试
+add_executable(test_foreign_key test_foreign_key.cpp)
+target_link_libraries(test_foreign_key PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME foreign_key_tests COMMAND test_foreign_key)

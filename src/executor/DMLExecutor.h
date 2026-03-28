@@ -41,6 +41,26 @@ private:
     // 设置结果元数据
     static void setResultMetadata(ExecutionResult& result, const std::vector<std::string>& columnNames,
                                    const std::vector<DataType>& columnTypes);
+
+    // 外键约束检查
+    static Result<void> checkForeignKeyConstraints(
+        const std::string& dbName,
+        const std::string& tableName,
+        const TableDef& tableDef,
+        const Row& row,
+        bool isInsert);
+
+    static Result<void> checkForeignKeyForColumn(
+        const std::string& dbName,
+        const std::string& tableName,
+        const ForeignKeyDef& fk,
+        const Value& value);
+
+    static bool hasReferencingRows(
+        const std::string& dbName,
+        const std::string& refTable,
+        const std::string& refColumn,
+        const Value& value);
 };
 
 } // namespace executor

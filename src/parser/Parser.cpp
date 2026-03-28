@@ -1,6 +1,7 @@
 #include "Parser.h"
 #include "../common/Error.h"
 #include "../common/Logger.h"
+#include "../common/Type.h"
 
 namespace minisql {
 namespace parser {
@@ -57,6 +58,8 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
 
     if (checkKeyword("USE")) return parseUseStatement();
     if (checkKeyword("SHOW")) return parseShowStatement();
+    if (checkKeyword("EXPLAIN")) return parseExplainStatement();
+    if (checkKeyword("ANALYZE")) return parseAnalyzeStatement();
     if (checkKeyword("SELECT")) return parseSelectStatement();
     if (checkKeyword("INSERT")) return parseInsertStatement();
     if (checkKeyword("UPDATE")) return parseUpdateStatement();
@@ -109,6 +112,61 @@ std::shared_ptr<ASTNode> Parser::parseShowStatement() {
     }
 
     match(TokenType::SEMICOLON);
+    return stmt;
+}
+
+// EXPLAIN 语句解析
+std::shared_ptr<ASTNode> Parser::parseExplainStatement() {
+    expectKeyword("EXPLAIN", "Expected EXPLAIN");
+
+    auto stmt = std::make_shared<ExplainStmt>();
+
+    // 检查是否是 JSON 格式
+    if (checkKeyword("FORMAT")) {
+        advance();
+        if (checkKeyword("JSON")) {
+            stmt->formatJSON = true;
+            advance();
+        }
+    }
+
+    // 解析内部语句（目前只支持 SELECT）
+    if (checkKeyword("SELECT")) {
+        stmt->innerStatement = parseSelectStatement();
+    } else {
+        throw MiniSQLException(
+            ErrorCode::PARSER_SYNTAX_ERROR,
+            "EXPLAIN currently only supports SELECT statements"
+        );
+    }
+
+    return stmt;
+}
+
+// ANALYZE TABLE 语句解析
+std::shared_ptr<ASTNode> Parser::parseAnalyzeStatement() {
+    expectKeyword("ANALYZE", "Expected ANALYZE");
+
+    if (!checkKeyword("TABLE")) {
+        throw MiniSQLException(
+            ErrorCode::PARSER_SYNTAX_ERROR,
+            "Expected TABLE after ANALYZE"
+        );
+    }
+    advance();
+
+    auto stmt = std::make_shared<AnalyzeStmt>();
+
+    if (!check(TokenType::IDENTIFIER)) {
+        throw MiniSQLException(
+            ErrorCode::PARSER_SYNTAX_ERROR,
+            "Expected table name after ANALYZE TABLE"
+        );
+    }
+
+    stmt->tableName = current_.value;
+    advance();
+
     return stmt;
 }
 
@@ -439,73 +497,223 @@ std::shared_ptr<CreateTableStmt> Parser::parseCreateStatement() {
         advance();
     }
 
-    // 列定义
+    // 列定义和表级约束
     if (check(TokenType::LEFT_PAREN)) {
         advance();
 
         while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
-            auto columnDef = std::make_shared<ColumnDefNode>();
-
-            // 列名
-            if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-                columnDef->name = current_.value;
-                advance();
-            }
-
-            // 数据类型
-            if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-                std::string typeName = current_.value;
-                advance();
-
-                // 转换为 DataType（简化处理）
-                if (typeName == "INT" || typeName == "INTEGER") {
-                    columnDef->type = DataType::INT;
-                } else if (typeName == "VARCHAR" || typeName == "CHAR") {
-                    columnDef->type = DataType::VARCHAR;
-                    // 检查长度
-                    if (check(TokenType::LEFT_PAREN)) {
+            // 表级索引约束: INDEX, UNIQUE INDEX, PRIMARY KEY, UNIQUE
+            if (checkKeyword("INDEX") || checkKeyword("KEY")) {
+                bool isUnique = false;
+                if (checkKeyword("UNIQUE")) {
+                    isUnique = true;
+                    advance();
+                    if (checkKeyword("INDEX") || checkKeyword("KEY")) advance();
+                }
+                if (match(TokenType::LEFT_PAREN)) {
+                    std::string idxName;
+                    if (check(TokenType::IDENTIFIER) && !checkKeyword("KEY") && !checkKeyword("INDEX")) {
+                        idxName = current_.value;
                         advance();
-                        if (check(TokenType::INT_LITERAL)) {
-                            columnDef->length = std::stoi(current_.value);
+                        if (match(TokenType::LEFT_PAREN)) {
+                            // name was actually a column name
+                            std::vector<std::string> cols;
+                            while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+                                if (check(TokenType::IDENTIFIER)) {
+                                    cols.push_back(current_.value);
+                                    advance();
+                                }
+                                if (match(TokenType::COMMA)) continue;
+                                else break;
+                            }
+                            expect(TokenType::RIGHT_PAREN, "Expected ')' after index columns");
+                            IndexDef idx;
+                            idx.name = idxName.empty() ? (isUnique ? "uniq_" + cols[0] : "idx_" + cols[0]) : idxName;
+                            idx.columns = cols;
+                            idx.unique = isUnique;
+                            stmt->indexes.push_back(idx);
+                        }
+                    } else {
+                        std::vector<std::string> cols;
+                        while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+                            if (check(TokenType::IDENTIFIER)) {
+                                cols.push_back(current_.value);
+                                advance();
+                            }
+                            if (match(TokenType::COMMA)) continue;
+                            else break;
+                        }
+                        expect(TokenType::RIGHT_PAREN, "Expected ')' after index columns");
+                        IndexDef idx;
+                        idx.name = isUnique ? ("uniq_" + cols[0]) : ("idx_" + cols[0]);
+                        idx.columns = cols;
+                        idx.unique = isUnique;
+                        stmt->indexes.push_back(idx);
+                    }
+                }
+            } else if (checkKeyword("UNIQUE")) {
+                // UNIQUE [INDEX|KEY] (col, ...)
+                advance();
+                if (checkKeyword("INDEX") || checkKeyword("KEY")) advance();
+                if (match(TokenType::LEFT_PAREN)) {
+                    std::string idxName;
+                    if (check(TokenType::IDENTIFIER) && !checkKeyword("KEY") && !checkKeyword("INDEX")) {
+                        idxName = current_.value;
+                        advance();
+                        if (match(TokenType::LEFT_PAREN)) {
+                            std::vector<std::string> cols;
+                            while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+                                if (check(TokenType::IDENTIFIER)) {
+                                    cols.push_back(current_.value);
+                                    advance();
+                                }
+                                if (match(TokenType::COMMA)) continue;
+                                else break;
+                            }
+                            expect(TokenType::RIGHT_PAREN, "Expected ')' after index columns");
+                            IndexDef idx;
+                            idx.name = idxName.empty() ? ("uniq_" + cols[0]) : idxName;
+                            idx.columns = cols;
+                            idx.unique = true;
+                            stmt->indexes.push_back(idx);
+                        }
+                    } else {
+                        std::vector<std::string> cols;
+                        while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+                            if (check(TokenType::IDENTIFIER)) {
+                                cols.push_back(current_.value);
+                                advance();
+                            }
+                            if (match(TokenType::COMMA)) continue;
+                            else break;
+                        }
+                        expect(TokenType::RIGHT_PAREN, "Expected ')' after index columns");
+                        IndexDef idx;
+                        idx.name = "uniq_" + cols[0];
+                        idx.columns = cols;
+                        idx.unique = true;
+                        stmt->indexes.push_back(idx);
+                    }
+                }
+            } else if (checkKeyword("FOREIGN")) {
+                // 表级外键约束
+                advance();
+                if (checkKeyword("KEY")) advance();
+                if (match(TokenType::LEFT_PAREN)) {
+                    if (check(TokenType::IDENTIFIER)) {
+                        std::string fkColumn = current_.value;
+                        advance();
+                        expect(TokenType::RIGHT_PAREN, "Expected ')' after foreign key column");
+                        expectKeyword("REFERENCES", "Expected REFERENCES after foreign key column");
+                        std::string refTable;
+                        if (check(TokenType::IDENTIFIER)) {
+                            refTable = current_.value;
                             advance();
                         }
-                        expect(TokenType::RIGHT_PAREN, "Expected ')' after type length");
+                        std::string refColumn;
+                        if (match(TokenType::LEFT_PAREN)) {
+                            if (check(TokenType::IDENTIFIER)) {
+                                refColumn = current_.value;
+                                advance();
+                                expect(TokenType::RIGHT_PAREN, "Expected ')' after reference column");
+                            }
+                        }
+                        ForeignKeyDef fk;
+                        fk.column = fkColumn;
+                        fk.refTable = refTable;
+                        fk.refColumn = refColumn;
+                        fk.onDelete = "RESTRICT";
+                        fk.onUpdate = "RESTRICT";
+                        stmt->foreignKeys.push_back(fk);
                     }
-                } else if (typeName == "FLOAT" || typeName == "DOUBLE") {
-                    columnDef->type = DataType::FLOAT;
-                } else {
-                    columnDef->type = DataType::UNKNOWN;
                 }
-            }
+            } else {
+                // 普通列定义
+                auto columnDef = std::make_shared<ColumnDefNode>();
 
-            // 约束（简化处理）
-            while (!check(TokenType::COMMA) && !check(TokenType::RIGHT_PAREN) &&
-                   !check(TokenType::EOF_TOKEN)) {
-                if (checkKeyword("NOT")) {
-                    advance();
-                    if (checkKeyword("NULL")) {
-                        columnDef->notNull = true;
-                        advance();
-                    }
-                } else if (checkKeyword("PRIMARY")) {
-                    advance();
-                    if (checkKeyword("KEY")) {
-                        columnDef->primaryKey = true;
-                        advance();
-                    }
-                } else if (checkKeyword("UNIQUE")) {
-                    columnDef->unique = true;
-                    advance();
-                } else if (checkKeyword("AUTO_INCREMENT")) {
-                    columnDef->autoIncrement = true;
-                    advance();
-                } else {
-                    // 跳过未识别的标记
+                // 列名
+                if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
+                    columnDef->name = current_.value;
                     advance();
                 }
-            }
 
-            stmt->columns.push_back(columnDef);
+                // 数据类型
+                if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
+                    std::string typeName = current_.value;
+                    advance();
+
+                    // 转换为 DataType（简化处理）
+                    if (typeName == "INT" || typeName == "INTEGER") {
+                        columnDef->type = DataType::INT;
+                    } else if (typeName == "VARCHAR" || typeName == "CHAR") {
+                        columnDef->type = DataType::VARCHAR;
+                        // 检查长度
+                        if (check(TokenType::LEFT_PAREN)) {
+                            advance();
+                            if (check(TokenType::INT_LITERAL)) {
+                                columnDef->length = std::stoi(current_.value);
+                                advance();
+                            }
+                            expect(TokenType::RIGHT_PAREN, "Expected ')' after type length");
+                        }
+                    } else if (typeName == "FLOAT" || typeName == "DOUBLE") {
+                        columnDef->type = DataType::FLOAT;
+                    } else {
+                        columnDef->type = DataType::UNKNOWN;
+                    }
+                }
+
+                // 列级约束
+                while (!check(TokenType::COMMA) && !check(TokenType::RIGHT_PAREN) &&
+                       !check(TokenType::EOF_TOKEN)) {
+                    if (checkKeyword("NOT")) {
+                        advance();
+                        if (checkKeyword("NULL")) {
+                            columnDef->notNull = true;
+                            advance();
+                        }
+                    } else if (checkKeyword("PRIMARY")) {
+                        advance();
+                        if (checkKeyword("KEY")) {
+                            columnDef->primaryKey = true;
+                            advance();
+                        }
+                    } else if (checkKeyword("UNIQUE")) {
+                        columnDef->unique = true;
+                        advance();
+                    } else if (checkKeyword("AUTO_INCREMENT")) {
+                        columnDef->autoIncrement = true;
+                        advance();
+                    } else if (checkKeyword("REFERENCES")) {
+                        // 列级外键: REFERENCES table(column)
+                        std::string refTable;
+                        if (check(TokenType::IDENTIFIER)) {
+                            refTable = current_.value;
+                            advance();
+                        }
+                        std::string refColumn;
+                        if (match(TokenType::LEFT_PAREN)) {
+                            if (check(TokenType::IDENTIFIER)) {
+                                refColumn = current_.value;
+                                advance();
+                                expect(TokenType::RIGHT_PAREN, "Expected ')' after reference column");
+                            }
+                        }
+                        ForeignKeyDef fk;
+                        fk.column = columnDef->name;
+                        fk.refTable = refTable;
+                        fk.refColumn = refColumn;
+                        fk.onDelete = "RESTRICT";
+                        fk.onUpdate = "RESTRICT";
+                        stmt->foreignKeys.push_back(fk);
+                    } else {
+                        // 跳过未识别的标记
+                        advance();
+                    }
+                }
+
+                stmt->columns.push_back(columnDef);
+            }
 
             if (!match(TokenType::COMMA)) {
                 break;
@@ -814,6 +1022,55 @@ ExprPtr Parser::parseComparisonExpression() {
         }
     }
 
+    // 检查 IN / NOT IN 子查询
+    if (checkKeyword("IN")) {
+        advance();
+        // 解析 (SELECT ...)
+        if (match(TokenType::LEFT_PAREN)) {
+            if (checkKeyword("SELECT")) {
+                auto subquery = parseSelectStatement();
+                expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
+                left = std::make_shared<InSubqueryExpr>(left, subquery, false);
+            } else {
+                // 可能是 IN (val1, val2, ...) 列表
+                // 先回退
+                throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR,
+                    "IN requires subquery");
+            }
+        }
+    } else if (checkKeyword("NOT")) {
+        // 检查 NOT IN 或 NOT EXISTS
+        advance();
+        if (checkKeyword("IN")) {
+            advance();
+            if (match(TokenType::LEFT_PAREN)) {
+                if (checkKeyword("SELECT")) {
+                    auto subquery = parseSelectStatement();
+                    expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
+                    left = std::make_shared<InSubqueryExpr>(left, subquery, true);
+                }
+            }
+        } else if (checkKeyword("EXISTS")) {
+            advance();
+            if (match(TokenType::LEFT_PAREN)) {
+                if (checkKeyword("SELECT")) {
+                    auto subquery = parseSelectStatement();
+                    expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
+                    left = std::make_shared<ExistsExpr>(subquery, true);
+                }
+            }
+        }
+    } else if (checkKeyword("EXISTS")) {
+        advance();
+        if (match(TokenType::LEFT_PAREN)) {
+            if (checkKeyword("SELECT")) {
+                auto subquery = parseSelectStatement();
+                expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
+                left = std::make_shared<ExistsExpr>(subquery, false);
+            }
+        }
+    }
+
     return left;
 }
 
@@ -927,6 +1184,13 @@ ExprPtr Parser::parsePrimaryExpression() {
     // 括号表达式
     if (check(TokenType::LEFT_PAREN)) {
         advance();
+        // 检查是否是子查询
+        if (checkKeyword("SELECT")) {
+            // 子查询
+            auto subquery = parseSelectStatement();
+            expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
+            return std::make_shared<SubqueryExpr>(subquery);
+        }
         ExprPtr expr = parseExpression();
         expect(TokenType::RIGHT_PAREN, "Expected ')'");
         return expr;
