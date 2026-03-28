@@ -3,9 +3,9 @@
 #include "Reactor.h"
 #include "SqlProtocol.h"
 #include "../transaction/TransactionManager.h"
-#include "../../../executor/Executor.h"
-#include "../../../parser/Parser.h"
-#include "../../../common/Logger.h"
+#include "../../executor/Executor.h"
+#include "../../parser/Parser.h"
+#include "../../common/Logger.h"
 #include <unistd.h>
 #include <signal.h>
 #include <sys/socket.h>
