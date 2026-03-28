@@ -94,7 +94,6 @@ if(NOT BUILD_SERVER)
     target_link_libraries(test_ddl_executor PRIVATE executor parser common storage test_utils)
     add_test(NAME ddl_executor_tests COMMAND test_ddl_executor)
 
-if(NOT BUILD_SERVER)
     # 主执行器测试
     add_executable(test_executor test_executor.cpp)
     target_link_libraries(test_executor PRIVATE executor parser common storage Qt${QT_VERSION_MAJOR}::Core)
