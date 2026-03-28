@@ -27,11 +27,13 @@ struct PlanNode {
     ScanType scanType = ScanType::FULL_SCAN;
     std::string tableName;
     std::string indexName;       // 使用的索引
+    std::string joinType;        // JOIN 类型: INNER, LEFT, RIGHT, FULL
     std::vector<std::string> columns;  // 涉及的列
     parser::ExprPtr condition;   // 过滤条件
     std::vector<parser::ExprPtr> projections;  // 投影列（用于 ProjectOperator）
     std::vector<parser::OrderByItem> orderBy;  // 排序项（用于 SortOperator）
     std::vector<parser::ExprPtr> groupBy;  // 分组列（用于 AggregateOperator）
+    parser::ExprPtr havingClause;  // HAVING 条件（用于 AggregateOperator）
     int limit = -1;  // LIMIT 值
     int offset = 0;  // OFFSET 值
     double cost = 0;            // 预估代价

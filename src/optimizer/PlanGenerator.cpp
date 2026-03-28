@@ -9,6 +9,7 @@
 #include "../executor/FilterOperator.h"
 #include "../executor/ProjectOperator.h"
 #include "../executor/NestedLoopJoinOperator.h"
+#include "../executor/SubqueryScanOperator.h"
 #include "../executor/SortOperator.h"
 #include "../executor/AggregateOperator.h"
 #include "../executor/LimitOperator.h"
@@ -47,20 +48,66 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generate(
             ErrorCode::EXEC_INVALID_VALUE, "NULL statement"));
     }
 
-    // 1. 查询重写
-    auto rewritten = QueryRewriter::rewrite(stmt);
-    parser::SelectStmt* selectStmt = rewritten ? rewritten.get() : stmt;
+    // 1. 查询重写 - 禁用（已在 QueryOptimizer 中处理）
+    // auto rewritten = QueryRewriter::rewrite(stmt);
+    // parser::SelectStmt* selectStmt = rewritten ? rewritten.get() : stmt;
+    parser::SelectStmt* selectStmt = stmt;
 
+    LOG_DEBUG("PlanGenerator", "Starting plan generation");
     // 2. 生成扫描节点（传入 WHERE 条件以支持索引选择）
-    std::string tableName = selectStmt->fromTable ? selectStmt->fromTable->name : "";
-    auto scanResult = generateScanNode(dbName, tableName, selectStmt->whereClause);
-    if (scanResult.isError()) {
-        return Result<std::shared_ptr<PlanNode>>(scanResult.getError());
+    std::shared_ptr<PlanNode> current;
+
+    if (selectStmt->fromTable && selectStmt->fromTable->subquery) {
+        // FROM 子查询：递归生成子查询计划
+        auto subplan = generate(dbName, selectStmt->fromTable->subquery.get());
+        if (subplan.isError()) {
+            return Result<std::shared_ptr<PlanNode>>(subplan.getError());
+        }
+
+        // 创建子查询扫描节点
+        current = std::make_shared<PlanNode>();
+        current->nodeId = generateNodeId();
+        current->operatorType = "SubqueryScan";
+        current->tableName = selectStmt->fromTable->alias;  // 使用别名作为表名
+        current->children.push_back(*subplan.getValue());
+        current->estimatedRows = (*subplan.getValue())->estimatedRows;
+        current->cost = (*subplan.getValue())->cost;
+    } else {
+        // 普通表扫描
+        std::string tableName = selectStmt->fromTable ? selectStmt->fromTable->name : "";
+        auto scanResult = generateScanNode(dbName, tableName, selectStmt->whereClause);
+        if (scanResult.isError()) {
+            return Result<std::shared_ptr<PlanNode>>(scanResult.getError());
+        }
+        current = *scanResult.getValue();
     }
-    std::shared_ptr<PlanNode> current = *scanResult.getValue();
+
+    // 2.3 处理 JOIN 节点（在 WHERE 之前串联）
+    for (const auto& join : selectStmt->joins) {
+        // 为右表生成扫描节点
+        std::string rightTableName = join->table ? join->table->name : "";
+        auto rightScanResult = generateScanNode(dbName, rightTableName, nullptr);
+        if (rightScanResult.isError()) {
+            return Result<std::shared_ptr<PlanNode>>(rightScanResult.getError());
+        }
+        auto rightScan = *rightScanResult.getValue();
+
+        // 生成 JOIN 节点
+        auto joinNode = std::make_shared<PlanNode>();
+        joinNode->nodeId = generateNodeId();
+        joinNode->operatorType = "NestedLoopJoin";
+        joinNode->joinType = join->joinType;
+        joinNode->condition = join->onCondition;
+        joinNode->children = {current, rightScan};
+        joinNode->estimatedRows = (current->estimatedRows * rightScan->estimatedRows) / 10;  // 简单估算
+        joinNode->cost = current->cost + rightScan->cost + joinNode->estimatedRows * CostModel::CPU_NESTED_LOOP;
+        current = joinNode;
+    }
 
     // 2.5 创建 Filter 节点处理 WHERE 条件
+    LOG_DEBUG("PlanGenerator", "Checking WHERE clause");
     if (selectStmt->whereClause) {
+        LOG_DEBUG("PlanGenerator", "Creating Filter node");
         auto filterNode = std::make_shared<PlanNode>();
         filterNode->nodeId = generateNodeId();
         filterNode->operatorType = "Filter";
@@ -72,6 +119,7 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generate(
     }
 
     // 3. GROUP BY + 聚合
+    LOG_DEBUG("PlanGenerator", "Checking GROUP BY/aggregate");
     if (!selectStmt->groupBy.empty() || !selectStmt->selectItems.empty()) {
         // 检查是否有聚合函数
         bool hasAggregate = false;
@@ -82,7 +130,7 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generate(
             }
         }
         if (hasAggregate || !selectStmt->groupBy.empty()) {
-            auto aggResult = generateAggregateNode(dbName, current, selectStmt->groupBy);
+            auto aggResult = generateAggregateNode(dbName, current, selectStmt->groupBy, selectStmt->havingClause);
             if (aggResult.isSuccess()) {
                 current = *aggResult.getValue();
             }
@@ -98,12 +146,14 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generate(
     }
 
     // 5. SELECT 投影
+    LOG_DEBUG("PlanGenerator", "Generating project node");
     auto projResult = generateProjectNode(dbName, current, selectStmt->selectItems);
     if (projResult.isSuccess()) {
         current = *projResult.getValue();
     }
 
     // 6. LIMIT/OFFSET
+    LOG_DEBUG("PlanGenerator", "Checking LIMIT/OFFSET");
     if (selectStmt->limit >= 0 || selectStmt->offset > 0) {
         auto limitResult = generateLimitNode(dbName, current, selectStmt->limit, selectStmt->offset);
         if (limitResult.isSuccess()) {
@@ -133,10 +183,13 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generateScanNode(
 
     // 选择索引（使用 WHERE 条件）
     auto indexResult = IndexSelector::selectIndex(dbName, tableName, whereClause);
-    if (indexResult.isSuccess() && indexResult.getValue() && indexResult.getValue()->has_value()) {
-        auto& match = **indexResult.getValue();
-        node->indexName = match.indexName;
-        node->scanType = match.isCovering ? ScanType::COVERING_SCAN : ScanType::INDEX_SCAN;
+    if (indexResult.isSuccess()) {
+        auto& optMatch = *indexResult.getValue();
+        if (optMatch.has_value()) {
+            IndexMatch match = *optMatch;  // 复制避免悬空引用
+            node->indexName = match.indexName;
+            node->scanType = match.isCovering ? ScanType::COVERING_SCAN : ScanType::INDEX_SCAN;
+        }
     }
 
     // 估算代价 - 扫描所有行
@@ -170,13 +223,15 @@ Result<std::shared_ptr<PlanNode>> PlanGenerator::generateJoinNode(
 Result<std::shared_ptr<PlanNode>> PlanGenerator::generateAggregateNode(
     const std::string& dbName,
     std::shared_ptr<PlanNode> child,
-    const std::vector<parser::ExprPtr>& groupBy) {
+    const std::vector<parser::ExprPtr>& groupBy,
+    parser::ExprPtr havingClause) {
 
     auto node = std::make_shared<PlanNode>();
     node->nodeId = generateNodeId();
     node->operatorType = "Aggregate";
     node->children.push_back(child);
     node->groupBy = groupBy;
+    node->havingClause = havingClause;  // 添加 HAVING 条件
 
     // 估算聚合后的行数（分组后通常减少）
     node->estimatedRows = std::max<int64_t>(1, child->estimatedRows / 10);
@@ -290,6 +345,14 @@ Result<executor::OperatorPtr> PlanGenerator::materialize(
     } else if (opType == "Limit") {
         executor::OperatorPtr child = childOps.empty() ? nullptr : childOps[0];
         return materializeLimitNode(dbName, plan, child);
+    } else if (opType == "SubqueryScan") {
+        executor::OperatorPtr child = childOps.empty() ? nullptr : childOps[0];
+        if (!child) {
+            return Result<executor::OperatorPtr>(MiniSQLException(
+                ErrorCode::EXEC_INVALID_VALUE, "SubqueryScan node without child"));
+        }
+        auto op = std::make_shared<executor::SubqueryScanOperator>(child, plan->tableName);
+        return Result<executor::OperatorPtr>(op);
     }
 
     return Result<executor::OperatorPtr>(nullptr);
@@ -340,9 +403,17 @@ Result<executor::OperatorPtr> PlanGenerator::materializeJoinNode(
 
     auto op = std::make_shared<executor::NestedLoopJoinOperator>(
         *leftResult.getValue(), *rightResult.getValue(),
-        node->condition, executor::NestedLoopJoinOperator::JoinType::INNER);
+        node->condition, static_cast<executor::NestedLoopJoinOperator::JoinType>(parseJoinTypeCode(node->joinType)));
 
     return Result<executor::OperatorPtr>(op);
+}
+
+// 解析 JOIN 类型字符串为枚举（0=INNER, 1=LEFT, 2=RIGHT, 3=FULL）
+int PlanGenerator::parseJoinTypeCode(const std::string& typeStr) {
+    if (typeStr == "LEFT") return 1;
+    if (typeStr == "RIGHT") return 2;
+    if (typeStr == "FULL") return 3;
+    return 0;  // 默认 INNER
 }
 
 Result<executor::OperatorPtr> PlanGenerator::materializeSortNode(
@@ -393,7 +464,7 @@ Result<executor::OperatorPtr> PlanGenerator::materializeAggregateNode(
         }
     }
 
-    auto op = std::make_shared<executor::AggregateOperator>(child, node->groupBy, aggregates);
+    auto op = std::make_shared<executor::AggregateOperator>(child, node->groupBy, aggregates, node->havingClause);
     return Result<executor::OperatorPtr>(op);
 }
 
@@ -421,6 +492,10 @@ Result<executor::OperatorPtr> PlanGenerator::materializeLimitNode(
             ErrorCode::EXEC_INVALID_VALUE, "Limit node without child"));
     }
 
-    auto op = std::make_shared<executor::LimitOperator>(child, node->limit, node->offset);
+    // 将 -1 转换为 0（表示没有 OFFSET）
+    size_t limit = node->limit >= 0 ? static_cast<size_t>(node->limit) : SIZE_MAX;
+    size_t offset = node->offset >= 0 ? static_cast<size_t>(node->offset) : 0;
+
+    auto op = std::make_shared<executor::LimitOperator>(child, limit, offset);
     return Result<executor::OperatorPtr>(op);
 }

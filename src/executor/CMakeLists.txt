@@ -5,6 +5,7 @@ add_library(executor
     FilterOperator.cpp
     ProjectOperator.cpp
     NestedLoopJoinOperator.cpp
+    SubqueryScanOperator.cpp
     LimitOperator.cpp
     SortOperator.cpp
     AggregateOperator.cpp

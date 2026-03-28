@@ -142,7 +142,7 @@ Result<ExecutionResult> DMLExecutor::executeUpdate(const std::string& dbName, pa
                 return Result<ExecutionResult>(evalResult.getError());
             }
 
-            const Value& conditionResult = *evalResult.getValue();
+            Value conditionResult = *evalResult.getValue();
             shouldUpdate = !conditionResult.isNull() && conditionResult.getBool();
         }
 
@@ -244,7 +244,7 @@ Result<ExecutionResult> DMLExecutor::executeDelete(const std::string& dbName, pa
                 return Result<ExecutionResult>(evalResult.getError());
             }
 
-            const Value& conditionResult = *evalResult.getValue();
+            Value conditionResult = *evalResult.getValue();
             shouldDelete = !conditionResult.isNull() && conditionResult.getBool();
         }
 

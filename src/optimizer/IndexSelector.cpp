@@ -30,7 +30,8 @@ Result<std::optional<IndexMatch>> IndexSelector::selectIndex(
     if (indexesResult.isError()) {
         return Result<std::optional<IndexMatch>>(indexesResult.getError());
     }
-    const auto& indexes = *indexesResult.getValue();
+    // 必须使用值，不能使用引用，因为 indexesResult 会在语句结束时销毁
+    auto indexes = *indexesResult.getValue();
 
     if (indexes.empty()) {
         return Result<std::optional<IndexMatch>>(std::nullopt);
@@ -82,6 +83,7 @@ Result<std::vector<IndexDef>> IndexSelector::getAvailableIndexes(
     }
     auto& tableDef = *tableDefResult.getValue();
 
+    // 返回副本，避免悬空引用
     return Result<std::vector<IndexDef>>(tableDef.indexes);
 }
 

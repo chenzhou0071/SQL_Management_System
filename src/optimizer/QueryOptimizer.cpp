@@ -31,9 +31,12 @@ Result<executor::OperatorPtr> QueryOptimizer::optimize(
 
     // ========== 步骤 1: 查询重写 ==========
     LOG_DEBUG("QueryOptimizer", "Step 1: Query rewriting");
-    auto rewrittenStmt = QueryRewriter::rewrite(stmt);
+    // 暂时禁用查询重写来隔离问题
+    // auto rewrittenStmt = QueryRewriter::rewrite(stmt);
+    std::shared_ptr<parser::SelectStmt> rewrittenStmt = nullptr;
+    LOG_DEBUG("QueryOptimizer", "Query rewriting DISABLED");
     if (!rewrittenStmt) {
-        LOG_WARN("QueryOptimizer", "Query rewriting failed, using original statement");
+        LOG_WARN("QueryOptimizer", "Query rewriting disabled, using original statement");
         rewrittenStmt = std::make_shared<parser::SelectStmt>(*stmt);
     }
 
@@ -57,21 +60,25 @@ Result<executor::OperatorPtr> QueryOptimizer::optimize(
 
     // ========== 步骤 4: 规则优化 ==========
     LOG_DEBUG("QueryOptimizer", "Step 4: Applying rule-based optimizations");
-    auto ruleOptimizedPlan = RuleOptimizer::optimize(physicalPlan);
-    if (!ruleOptimizedPlan.isSuccess()) {
-        LOG_WARN("QueryOptimizer", "Rule optimization failed, using unoptimized plan");
-    } else {
-        physicalPlan = *ruleOptimizedPlan.getValue();
-    }
+    // 临时禁用
+    // auto ruleOptimizedPlan = RuleOptimizer::optimize(physicalPlan);
+    // if (!ruleOptimizedPlan.isSuccess()) {
+    //     LOG_WARN("QueryOptimizer", "Rule optimization failed, using unoptimized plan");
+    // } else {
+    //     physicalPlan = *ruleOptimizedPlan.getValue();
+    // }
+    LOG_DEBUG("QueryOptimizer", "Rule optimization DISABLED");
 
     // ========== 步骤 5: 代价优化 ==========
     LOG_DEBUG("QueryOptimizer", "Step 5: Applying cost-based optimizations");
-    auto costOptimizedPlan = CostOptimizer::optimize(dbName, physicalPlan);
-    if (!costOptimizedPlan.isSuccess()) {
-        LOG_WARN("QueryOptimizer", "Cost optimization failed, using unoptimized plan");
-    } else {
-        physicalPlan = *costOptimizedPlan.getValue();
-    }
+    // 临时禁用
+    // auto costOptimizedPlan = CostOptimizer::optimize(dbName, physicalPlan);
+    // if (!costOptimizedPlan.isSuccess()) {
+    //     LOG_WARN("QueryOptimizer", "Cost optimization failed, using unoptimized plan");
+    // } else {
+    //     physicalPlan = *costOptimizedPlan.getValue();
+    // }
+    LOG_DEBUG("QueryOptimizer", "Cost optimization DISABLED");
 
     LOG_INFO("QueryOptimizer", "Query optimization completed");
     return Result<executor::OperatorPtr>(physicalPlan);
@@ -86,8 +93,9 @@ Result<std::shared_ptr<PlanNode>> QueryOptimizer::getLogicalPlan(
         return Result<std::shared_ptr<PlanNode>>(error);
     }
 
-    // 重写查询
-    auto rewrittenStmt = QueryRewriter::rewrite(stmt);
+    // 重写查询 - 禁用
+    // auto rewrittenStmt = QueryRewriter::rewrite(stmt);
+    std::shared_ptr<parser::SelectStmt> rewrittenStmt = nullptr;
     if (!rewrittenStmt) {
         rewrittenStmt = std::make_shared<parser::SelectStmt>(*stmt);
     }
@@ -101,7 +109,9 @@ std::string QueryOptimizer::getRewrittenSQL(parser::SelectStmt* stmt) {
         return "";
     }
 
-    auto rewritten = QueryRewriter::rewrite(stmt);
+    // 暂时禁用
+    auto rewritten = std::make_shared<parser::SelectStmt>(*stmt);
+    // auto rewritten = QueryRewriter::rewrite(stmt);
     if (!rewritten) {
         return "";  // 重写失败，返回空字符串
     }

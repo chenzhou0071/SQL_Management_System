@@ -36,6 +36,9 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 获取表名 (委托给子算子)
+    std::string getTableName() const override;
+
     // 设置当前数据库 (用于子查询)
     void setCurrentDatabase(const std::string& dbName);
 

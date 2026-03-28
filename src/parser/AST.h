@@ -38,9 +38,9 @@ enum class ASTNodeType {
     LITERAL_EXPR,
     COLUMN_REF,
     FUNCTION_CALL,
-    SUBQUERY_EXPR,    // 子查询表达式
-    IN_SUBQUERY_EXPR,  // IN (SELECT ...) 表达式
-    EXISTS_EXPR,       // EXISTS (SELECT ...) 表达式
+    SUBQUERY_EXPR,       // 子查询表达式
+    IN_SUBQUERY_EXPR,    // IN (SELECT ...) 表达式
+    EXISTS_EXPR,         // EXISTS (SELECT ...) 表达式
 
     // 子句节点
     SELECT_CLAUSE,
@@ -275,9 +275,15 @@ struct TableRef : public ASTNode {
     std::string name;
     std::string alias;
     std::string database;
+    std::shared_ptr<SelectStmt> subquery;  // FROM 子查询
 
     TableRef() : ASTNode(ASTNodeType::TABLE_REF) {}
     std::string toString() const override {
+        if (subquery) {
+            std::string subStr = "(subquery)";
+            if (!alias.empty()) return subStr + " AS " + alias;
+            return subStr;
+        }
         if (!alias.empty()) return name + " AS " + alias;
         return name;
     }

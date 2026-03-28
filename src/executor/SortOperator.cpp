@@ -77,6 +77,10 @@ std::vector<DataType> SortOperator::getColumnTypes() const {
     return columnTypes_;
 }
 
+std::string SortOperator::getTableName() const {
+    return child_->getTableName();
+}
+
 Result<void> SortOperator::materializeAndSort() {
     // 物化所有行
     while (true) {
@@ -121,8 +125,8 @@ bool SortOperator::compareRows(const Tuple& left, const Tuple& right) {
             return false;
         }
 
-        const Value& leftVal = *leftResult.getValue();
-        const Value& rightVal = *rightResult.getValue();
+        Value leftVal = *leftResult.getValue();
+        Value rightVal = *rightResult.getValue();
 
         // NULL 处理：NULL 值最小
         if (leftVal.isNull() && !rightVal.isNull()) {
@@ -155,7 +159,20 @@ RowContext SortOperator::buildRowContext(const Tuple& row) {
 
     // 构建列名到值的映射
     for (size_t i = 0; i < columnNames.size() && i < row.size(); ++i) {
-        context[columnNames[i]] = row[i];
+        const std::string& fullColumnName = columnNames[i];
+
+        // 添加完整列名（可能包含表名前缀，如 "users.name"）
+        context[fullColumnName] = row[i];
+
+        // 如果列名包含表名前缀，也注册不带前缀的列名（用于向后兼容）
+        size_t dotPos = fullColumnName.find('.');
+        if (dotPos != std::string::npos) {
+            std::string shortName = fullColumnName.substr(dotPos + 1);
+            // 只有当没有冲突时才添加短名称
+            if (context.find(shortName) == context.end()) {
+                context[shortName] = row[i];
+            }
+        }
     }
 
     return context;

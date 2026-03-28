@@ -85,5 +85,9 @@ std::vector<DataType> TableScanOperator::getColumnTypes() const {
     return types;
 }
 
+std::string TableScanOperator::getTableName() const {
+    return tableName_;
+}
+
 } // namespace executor
 } // namespace minisql

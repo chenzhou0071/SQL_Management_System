@@ -66,7 +66,7 @@ Result<std::optional<Tuple>> FilterOperator::next() {
             return Result<std::optional<Tuple>>(evalResult.getError());
         }
 
-        const Value& conditionResult = *evalResult.getValue();
+        Value conditionResult = *evalResult.getValue();
 
         // 检查条件是否满足
         if (!conditionResult.isNull()) {
@@ -97,19 +97,36 @@ std::vector<DataType> FilterOperator::getColumnTypes() const {
     return child_->getColumnTypes();
 }
 
+std::string FilterOperator::getTableName() const {
+    return child_->getTableName();
+}
+
 RowContext FilterOperator::buildRowContext(const Tuple& row) {
     RowContext context;
 
-    // 从子算子获取列名
+    // 从子算��获取列名
     auto columnNames = child_->getColumnNames();
 
     // 构建列名到值的映射
     for (size_t i = 0; i < columnNames.size() && i < row.size(); ++i) {
-        context[columnNames[i]] = row[i];
+        const std::string& fullColumnName = columnNames[i];
+
+        // 添加完整列名（可能包含表名前缀，如 "users.name"）
+        context[fullColumnName] = row[i];
+
+        // 如果列名包含表名前缀，也注册不带前缀的列名（用于向后兼容）
+        size_t dotPos = fullColumnName.find('.');
+        if (dotPos != std::string::npos) {
+            std::string shortName = fullColumnName.substr(dotPos + 1);
+            // 只有当没有冲突时才添加短名称
+            if (context.find(shortName) == context.end()) {
+                context[shortName] = row[i];
+            }
+        }
     }
 
     return context;
 }
+}
 
-} // namespace executor
 } // namespace minisql

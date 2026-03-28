@@ -7,6 +7,11 @@
 #include <memory>
 
 namespace minisql {
+
+namespace executor {
+class NestedLoopJoinOperator;
+}
+
 namespace optimizer {
 
 // ============================================================
@@ -45,7 +50,8 @@ private:
     static Result<std::shared_ptr<PlanNode>> generateAggregateNode(
         const std::string& dbName,
         std::shared_ptr<PlanNode> child,
-        const std::vector<parser::ExprPtr>& groupBy);
+        const std::vector<parser::ExprPtr>& groupBy,
+        parser::ExprPtr havingClause = nullptr);
 
     // 生成排序节点
     static Result<std::shared_ptr<PlanNode>> generateSortNode(
@@ -107,6 +113,9 @@ private:
 
     // 生成唯一节点 ID
     static std::string generateNodeId();
+
+    // 解析 JOIN 类型字符串为枚举（0=INNER, 1=LEFT, 2=RIGHT, 3=FULL）
+    static int parseJoinTypeCode(const std::string& typeStr);
 
     static int nodeIdCounter_;
 };

@@ -77,9 +77,10 @@ Value AggregateOperator::SingleAggregateState::compute(const std::string& funcNa
 
 AggregateOperator::AggregateOperator(OperatorPtr child,
                                    const std::vector<parser::ExprPtr>& groupByExprs,
-                                   const std::vector<AggregateFunc>& aggregates)
+                                   const std::vector<AggregateFunc>& aggregates,
+                                   parser::ExprPtr havingClause)
     : child_(child), groupByExprs_(groupByExprs), aggregates_(aggregates),
-      isOpen_(false), currentGroupIndex_(0) {
+      havingClause_(havingClause), isOpen_(false), currentGroupIndex_(0) {
     children_.push_back(child);
 }
 
@@ -143,32 +144,54 @@ Result<std::optional<Tuple>> AggregateOperator::next() {
         return Result<std::optional<Tuple>>(error);
     }
 
-    if (currentGroupIndex_ >= groupOrder_.size()) {
-        return Result<std::optional<Tuple>>(std::nullopt); // EOF
+    // 跳过不满足 HAVING 条件的分组
+    while (currentGroupIndex_ < groupOrder_.size()) {
+        const GroupKey& groupKey = groupOrder_[currentGroupIndex_];
+        auto it = groups_.find(groupKey);
+        if (it == groups_.end()) {
+            currentGroupIndex_++;
+            continue;
+        }
+        AggregateState& state = it->second;
+
+        // 构建 HAVING 求值的行上下文
+        Tuple havingRow;
+        for (const auto& val : groupKey.keys) {
+            havingRow.push_back(val);
+        }
+        for (size_t i = 0; i < aggregates_.size(); ++i) {
+            havingRow.push_back(state.states[i].compute(aggregates_[i].name));
+        }
+
+        // 检查 HAVING 条件
+        if (havingClause_) {
+            RowContext context = buildRowContext(havingRow);
+            evaluator_.setRowContext(context);
+            auto havingResult = evaluator_.evaluate(havingClause_);
+            if (!havingResult.isSuccess()) {
+                return Result<std::optional<Tuple>>(havingResult.getError());
+            }
+            Value havingVal = *havingResult.getValue();
+            if (havingVal.isNull() || !havingVal.getBool()) {
+                currentGroupIndex_++;
+                continue;
+            }
+        }
+
+        // 构建输出行
+        Tuple row;
+        for (const auto& val : groupKey.keys) {
+            row.push_back(val);
+        }
+        for (size_t i = 0; i < aggregates_.size(); ++i) {
+            row.push_back(state.states[i].compute(aggregates_[i].name));
+        }
+
+        currentGroupIndex_++;
+        return Result<std::optional<Tuple>>(row);
     }
 
-    const GroupKey& groupKey = groupOrder_[currentGroupIndex_];
-    auto it = groups_.find(groupKey);
-    if (it == groups_.end()) {
-        return Result<std::optional<Tuple>>(std::nullopt);
-    }
-    AggregateState& state = it->second;
-
-    // 构建输出行
-    Tuple row;
-
-    // 添加 GROUP BY 列值
-    for (const auto& val : groupKey.keys) {
-        row.push_back(val);
-    }
-
-    // 添加聚合结果
-    for (size_t i = 0; i < aggregates_.size(); ++i) {
-        row.push_back(state.states[i].compute(aggregates_[i].name));
-    }
-
-    currentGroupIndex_++;
-    return Result<std::optional<Tuple>>(row);
+    return Result<std::optional<Tuple>>(std::nullopt); // EOF
 }
 
 Result<void> AggregateOperator::close() {
@@ -189,6 +212,10 @@ std::vector<std::string> AggregateOperator::getColumnNames() const {
 
 std::vector<DataType> AggregateOperator::getColumnTypes() const {
     return columnTypes_;
+}
+
+std::string AggregateOperator::getTableName() const {
+    return child_->getTableName();
 }
 
 Result<void> AggregateOperator::buildGroups() {
@@ -232,7 +259,7 @@ Result<void> AggregateOperator::buildGroups() {
                 return Result<void>(evalResult.getError());
             }
 
-            const Value& val = *evalResult.getValue();
+            Value val = *evalResult.getValue();
             it->second.states[i].addValue(agg.name, val);
         }
     }
@@ -261,9 +288,25 @@ Result<AggregateOperator::GroupKey> AggregateOperator::computeGroupKey(const Tup
 RowContext AggregateOperator::buildRowContext(const Tuple& row) {
     RowContext context;
 
+    // 从子算子获取列名
     auto columnNames = child_->getColumnNames();
+
+    // 构建列名到值的映射
     for (size_t i = 0; i < columnNames.size() && i < row.size(); ++i) {
-        context[columnNames[i]] = row[i];
+        const std::string& fullColumnName = columnNames[i];
+
+        // 添加完整列名（可能包含表名前缀，如 "users.name"）
+        context[fullColumnName] = row[i];
+
+        // 如果列名包含表名前缀，也注册不带前缀的列名（用于向后兼容）
+        size_t dotPos = fullColumnName.find('.');
+        if (dotPos != std::string::npos) {
+            std::string shortName = fullColumnName.substr(dotPos + 1);
+            // 只有当没有冲突时才添加短名称
+            if (context.find(shortName) == context.end()) {
+                context[shortName] = row[i];
+            }
+        }
     }
 
     return context;

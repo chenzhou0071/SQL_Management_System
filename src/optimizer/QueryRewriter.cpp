@@ -15,12 +15,14 @@ std::shared_ptr<parser::SelectStmt> QueryRewriter::rewrite(parser::SelectStmt* s
     auto rewritten = std::make_shared<parser::SelectStmt>(*stmt);
 
     // 1. 谓词下推
+    LOG_DEBUG("QueryRewriter", "Step 1: pushDownPredicates");
     auto pushResult = pushDownPredicates(rewritten.get());
     if (pushResult.isError()) {
         return nullptr;
     }
 
     // 2. 消除冗余条件
+    LOG_DEBUG("QueryRewriter", "Step 2: eliminateRedundantConditions");
     if (rewritten->whereClause) {
         auto elimResult = eliminateRedundantConditions(rewritten->whereClause);
         if (elimResult.isSuccess()) {
@@ -29,6 +31,7 @@ std::shared_ptr<parser::SelectStmt> QueryRewriter::rewrite(parser::SelectStmt* s
     }
 
     // 3. 常量折叠
+    LOG_DEBUG("QueryRewriter", "Step 3: foldConstants");
     if (rewritten->whereClause) {
         auto foldResult = foldConstants(rewritten->whereClause);
         if (foldResult.isSuccess()) {
@@ -37,6 +40,7 @@ std::shared_ptr<parser::SelectStmt> QueryRewriter::rewrite(parser::SelectStmt* s
     }
 
     // 4. 简化布尔表达式
+    LOG_DEBUG("QueryRewriter", "Step 4: simplifyBooleanExpr");
     if (rewritten->whereClause) {
         auto simpResult = simplifyBooleanExpr(rewritten->whereClause);
         if (simpResult.isSuccess()) {

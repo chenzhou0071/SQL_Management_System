@@ -47,6 +47,7 @@ Result<Value> ExpressionEvaluator::evaluate(parser::ExprPtr expr) {
         case parser::ASTNodeType::EXISTS_EXPR:
             return evaluateExists(static_cast<parser::ExistsExpr*>(expr.get()));
 
+
         default:
             MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "Unknown expression type");
             return Result<Value>(error);
@@ -67,16 +68,26 @@ Result<Value> ExpressionEvaluator::evaluateColumnRef(parser::ColumnRef* expr) {
         return Result<Value>(error);
     }
 
+    std::string tableName = expr->getTable();
     std::string colName = expr->getColumn();
 
-    // 在行上下文中查找列值
-    auto it = rowContext_.find(colName);
-    if (it == rowContext_.end()) {
-        MiniSQLException error(ErrorCode::EXEC_COLUMN_NOT_FOUND, "Column not found: " + colName);
-        return Result<Value>(error);
+    // 首先尝试使用完整的表名.列名格式 (用于 JOIN)
+    std::string qualifiedName = tableName.empty() ? colName : tableName + "." + colName;
+
+    auto it = rowContext_.find(qualifiedName);
+    if (it != rowContext_.end()) {
+        return Result<Value>(it->second);
     }
 
-    return Result<Value>(it->second);
+    // 如果没有找到，尝试只用列名 (用于非 JOIN 场景)
+    it = rowContext_.find(colName);
+    if (it != rowContext_.end()) {
+        return Result<Value>(it->second);
+    }
+
+    MiniSQLException error(ErrorCode::EXEC_COLUMN_NOT_FOUND,
+        "Column not found: " + qualifiedName + " (or " + colName + ")");
+    return Result<Value>(error);
 }
 
 Result<Value> ExpressionEvaluator::evaluateBinary(parser::BinaryExpr* expr) {
@@ -96,8 +107,8 @@ Result<Value> ExpressionEvaluator::evaluateBinary(parser::BinaryExpr* expr) {
         return rightResult;
     }
 
-    const Value& left = *leftResult.getValue();
-    const Value& right = *rightResult.getValue();
+    Value left = *leftResult.getValue();
+    Value right = *rightResult.getValue();
     const std::string& op = expr->getOp();
 
     // 根据操作符类型分发
@@ -124,7 +135,7 @@ Result<Value> ExpressionEvaluator::evaluateUnary(parser::UnaryExpr* expr) {
         return operandResult;
     }
 
-    const Value& operand = *operandResult.getValue();
+    Value operand = *operandResult.getValue();
     const std::string& op = expr->getOp();
 
     if (op == "NOT") {
@@ -388,16 +399,32 @@ Result<std::vector<Value>> ExpressionEvaluator::executeSubquery(parser::SelectSt
 
     // 添加 WHERE 过滤
     if (subquery->whereClause) {
-        scan = std::make_shared<FilterOperator>(scan, subquery->whereClause);
+        auto filter = std::make_shared<FilterOperator>(scan, subquery->whereClause);
+        filter->setCurrentDatabase(dbName);
+        scan = filter;
     }
 
-    // 添加聚合（如果有）
-    if (!subquery->selectItems.empty()) {
-        auto firstItem = subquery->selectItems[0];
-        if (firstItem->getType() == parser::ASTNodeType::FUNCTION_CALL) {
-            // 聚合函数，需要使用 AggregateOperator
-            // 简化处理：直接扫描获取所有值
+    // 添加聚合（如果有聚合函数）
+    bool hasAggregate = false;
+    std::vector<AggregateFunc> aggregates;
+    for (const auto& item : subquery->selectItems) {
+        if (item && item->getType() == parser::ASTNodeType::FUNCTION_CALL) {
+            auto funcExpr = static_cast<parser::FunctionCallExpr*>(item.get());
+            std::string funcName = funcExpr->getFuncName();
+            std::transform(funcName.begin(), funcName.end(), funcName.begin(), ::toupper);
+            if (funcName == "COUNT" || funcName == "SUM" || funcName == "AVG" ||
+                funcName == "MIN" || funcName == "MAX") {
+                hasAggregate = true;
+                auto args = funcExpr->getArgs();
+                parser::ExprPtr arg = args.empty() ? nullptr : args[0];
+                aggregates.emplace_back(funcName, arg);
+            }
         }
+    }
+
+    if (hasAggregate) {
+        scan = std::make_shared<AggregateOperator>(scan, subquery->groupBy, aggregates);
+    } else if (!subquery->selectItems.empty()) {
         // 添加投影
         scan = std::make_shared<ProjectOperator>(scan, subquery->selectItems);
     }
@@ -446,14 +473,14 @@ Result<Value> ExpressionEvaluator::evaluateInSubquery(parser::InSubqueryExpr* ex
     if (!leftResult.isSuccess()) {
         return Result<Value>(leftResult.getError());
     }
-    const Value& leftValue = *leftResult.getValue();
+    Value leftValue = *leftResult.getValue();
 
     // 执行子查询获取值列表
     auto subqueryResult = executeSubquery(expr->getQuery().get());
     if (subqueryResult.isError()) {
         return Result<Value>(subqueryResult.getError());
     }
-    const std::vector<Value>& values = *subqueryResult.getValue();
+    std::vector<Value> values = *subqueryResult.getValue();
 
     // 检查左边值是否在子查询结果中
     bool found = false;
@@ -480,7 +507,7 @@ Result<Value> ExpressionEvaluator::evaluateExists(parser::ExistsExpr* expr) {
         return Result<Value>(subqueryResult.getError());
     }
 
-    const std::vector<Value>& values = *subqueryResult.getValue();
+    std::vector<Value> values = *subqueryResult.getValue();
     bool exists = !values.empty();
 
     bool result = expr->isNotExists() ? !exists : exists;

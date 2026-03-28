@@ -7,7 +7,8 @@ namespace executor {
 NestedLoopJoinOperator::NestedLoopJoinOperator(OperatorPtr left, OperatorPtr right,
                                               parser::ExprPtr joinCond, JoinType joinType)
     : left_(left), right_(right), joinCond_(joinCond), joinType_(joinType),
-      isOpen_(false), rightRowIndex_(0) {
+      isOpen_(false), rightRowIndex_(0), leftRowMatched_(false),
+      rightRowsIndex_(0), inRightJoinPhase2_(false) {
     children_.push_back(left);
     children_.push_back(right);
 }
@@ -40,11 +41,37 @@ Result<void> NestedLoopJoinOperator::open() {
         return loadResult;
     }
 
-    // 构建输出列名和类型
+    LOG_INFO("NestedLoopJoinOperator", "Loaded " + std::to_string(rightRows_.size()) + " rows from right table");
+
+    // 初始化 RIGHT JOIN 的匹配标志数组
+    if (joinType_ == JoinType::RIGHT) {
+        rightRowsMatched_.resize(rightRows_.size(), false);
+    }
+
+    // 构建输出列名和类型（带表名前缀）
+    std::string leftTableName = left_->getTableName();
+    std::string rightTableName = right_->getTableName();
+
     auto leftNames = left_->getColumnNames();
     auto rightNames = right_->getColumnNames();
-    columnNames_.insert(columnNames_.end(), leftNames.begin(), leftNames.end());
-    columnNames_.insert(columnNames_.end(), rightNames.begin(), rightNames.end());
+
+    // 左表列名：添加表名前缀
+    for (const auto& name : leftNames) {
+        if (!leftTableName.empty()) {
+            columnNames_.push_back(leftTableName + "." + name);
+        } else {
+            columnNames_.push_back(name);
+        }
+    }
+
+    // 右表列名：添加表名前缀
+    for (const auto& name : rightNames) {
+        if (!rightTableName.empty()) {
+            columnNames_.push_back(rightTableName + "." + name);
+        } else {
+            columnNames_.push_back(name);
+        }
+    }
 
     auto leftTypes = left_->getColumnTypes();
     auto rightTypes = right_->getColumnTypes();
@@ -62,6 +89,27 @@ Result<std::optional<Tuple>> NestedLoopJoinOperator::next() {
         return Result<std::optional<Tuple>>(error);
     }
 
+    // RIGHT JOIN 第二阶段：输出未匹配的右行
+    if (joinType_ == JoinType::RIGHT && inRightJoinPhase2_) {
+        while (rightRowsIndex_ < rightRows_.size()) {
+            if (!rightRowsMatched_[rightRowsIndex_]) {
+                // 找到未匹配的右行，生成 NULL 填充的左行
+                const Tuple& rightRow = rightRows_[rightRowsIndex_];
+                Tuple nullLeftRow(left_->getColumnTypes().size());
+                for (size_t i = 0; i < nullLeftRow.size(); ++i) {
+                    nullLeftRow[i] = Value();  // NULL
+                }
+
+                Tuple joinedRow = joinRows(nullLeftRow, rightRow);
+                rightRowsIndex_++;
+                return Result<std::optional<Tuple>>(joinedRow);
+            }
+            rightRowsIndex_++;
+        }
+        return Result<std::optional<Tuple>>(std::nullopt); // EOF
+    }
+
+    // 第一阶段：正常的嵌套循环连接
     while (true) {
         // 如果没有当前左行，获取下一行
         if (!currentLeftRow_.has_value()) {
@@ -72,11 +120,19 @@ Result<std::optional<Tuple>> NestedLoopJoinOperator::next() {
 
             auto leftRowOpt = nextLeft.getValue();
             if (!leftRowOpt->has_value()) {
+                // 左表遍历完成
+                if (joinType_ == JoinType::RIGHT) {
+                    // 进入 RIGHT JOIN 第二阶段
+                    inRightJoinPhase2_ = true;
+                    rightRowsIndex_ = 0;
+                    return next();  // 递归调用进入第二阶段
+                }
                 return Result<std::optional<Tuple>>(std::nullopt); // EOF
             }
 
             currentLeftRow_ = leftRowOpt->value();
             rightRowIndex_ = 0;
+            leftRowMatched_ = false;  // 重置匹配标志
         }
 
         // 遍历右表行
@@ -95,10 +151,8 @@ Result<std::optional<Tuple>> NestedLoopJoinOperator::next() {
                     return Result<std::optional<Tuple>>(evalResult.getError());
                 }
 
-                const Value& conditionResult = *evalResult.getValue();
-                if (!conditionResult.isNull() && conditionResult.getBool()) {
-                    matched = true;
-                }
+                Value conditionResult = *evalResult.getValue();
+                matched = !conditionResult.isNull() && conditionResult.getBool();
             } else {
                 // 没有连接条件，笛卡尔积
                 matched = true;
@@ -107,25 +161,25 @@ Result<std::optional<Tuple>> NestedLoopJoinOperator::next() {
             rightRowIndex_++;
 
             if (matched) {
+                leftRowMatched_ = true;  // 标记左行匹配过
+                if (joinType_ == JoinType::RIGHT) {
+                    rightRowsMatched_[rightRowIndex_ - 1] = true;  // 标记右行被匹配
+                }
                 return Result<std::optional<Tuple>>(joinedRow);
             }
         }
 
         // 右表遍历完成，处理 LEFT JOIN 的未匹配情况
-        if (joinType_ == JoinType::LEFT && rightRowIndex_ >= rightRows_.size()) {
+        if (joinType_ == JoinType::LEFT && !leftRowMatched_) {
             // 左外连接：如果没有匹配，生成 NULL 填充的右行
-            bool hasMatch = false;
-            // 重新检查是否有匹配（这里简化处理）
-            // 实际实现需要记录是否匹配过
-
-            // 生成 NULL 填充的行
             Tuple nullRightRow(right_->getColumnTypes().size());
             for (size_t i = 0; i < nullRightRow.size(); ++i) {
-                nullRightRow[i] = Value();
+                nullRightRow[i] = Value();  // NULL
             }
 
             Tuple joinedRow = joinRows(currentLeftRow_.value(), nullRightRow);
             currentLeftRow_.reset(); // 移动到下一左行
+            leftRowMatched_ = false;
 
             return Result<std::optional<Tuple>>(joinedRow);
         }
@@ -153,6 +207,10 @@ std::vector<std::string> NestedLoopJoinOperator::getColumnNames() const {
 
 std::vector<DataType> NestedLoopJoinOperator::getColumnTypes() const {
     return columnTypes_;
+}
+
+std::string NestedLoopJoinOperator::getTableName() const {
+    return left_->getTableName();
 }
 
 Result<void> NestedLoopJoinOperator::loadRightTable() {
@@ -183,16 +241,30 @@ Tuple NestedLoopJoinOperator::joinRows(const Tuple& left, const Tuple& right) {
 RowContext NestedLoopJoinOperator::buildRowContext(const Tuple& left, const Tuple& right) {
     RowContext context;
 
-    // 添加左表列（不带表名前缀，直接使用列名）
+    // 获取左表和右表的名称
+    std::string leftTableName = left_->getTableName();
+    std::string rightTableName = right_->getTableName();
+
+    // 添加左表列（带表名前缀和不带前缀两种形式）
     auto leftNames = left_->getColumnNames();
     for (size_t i = 0; i < leftNames.size() && i < left.size(); ++i) {
+        // 不带表名前缀（用于向后兼容）
         context[leftNames[i]] = left[i];
+        // 带表名前缀（用于 JOIN 条件）
+        if (!leftTableName.empty()) {
+            context[leftTableName + "." + leftNames[i]] = left[i];
+        }
     }
 
-    // 添加右表列（覆盖同名的左表列）
+    // 添加右表列（带表名前缀和不带前缀两种形式）
     auto rightNames = right_->getColumnNames();
     for (size_t i = 0; i < rightNames.size() && i < right.size(); ++i) {
+        // 不带表名前缀
         context[rightNames[i]] = right[i];
+        // 带表名前缀
+        if (!rightTableName.empty()) {
+            context[rightTableName + "." + rightNames[i]] = right[i];
+        }
     }
 
     return context;

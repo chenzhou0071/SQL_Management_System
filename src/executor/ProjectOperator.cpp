@@ -1,5 +1,6 @@
 #include "ProjectOperator.h"
 #include "../common/Logger.h"
+#include <algorithm>
 
 namespace minisql {
 namespace executor {
@@ -37,6 +38,17 @@ Result<void> ProjectOperator::open() {
     return Result<void>();
 }
 
+bool ProjectOperator::isAggregateFunc(parser::ExprPtr expr) {
+    if (!expr || expr->getType() != parser::ASTNodeType::FUNCTION_CALL) {
+        return false;
+    }
+    auto funcCall = static_cast<parser::FunctionCallExpr*>(expr.get());
+    std::string name = funcCall->getFuncName();
+    std::transform(name.begin(), name.end(), name.begin(), ::toupper);
+    return name == "COUNT" || name == "SUM" || name == "AVG" ||
+           name == "MIN" || name == "MAX";
+}
+
 Result<std::optional<Tuple>> ProjectOperator::next() {
     if (!isOpen_) {
         MiniSQLException error(ErrorCode::EXEC_TABLE_NOT_FOUND, "Operator not open");
@@ -49,25 +61,41 @@ Result<std::optional<Tuple>> ProjectOperator::next() {
         return nextResult;
     }
 
-    auto rowOpt = nextResult.getValue();
-    if (!rowOpt->has_value()) {
+    std::optional<Tuple> optTuple = std::move(*nextResult.getValue());
+    if (!optTuple.has_value()) {
         return Result<std::optional<Tuple>>(std::nullopt); // EOF
     }
 
-    const Tuple& inputRow = rowOpt->value();
+    const Tuple& inputRow = optTuple.value();
 
-    // 构建行上下文
+    // 构建行上下文（仅用于非聚合表达式）
     RowContext context = buildRowContext(inputRow);
     evaluator_.setRowContext(context);
 
     // 计算每个投影表达式
+    // 聚合函数投影：直接取子算子输出的对应位置值（由 AggregateOperator 预计算）
+    // 非聚合表达式：使用 evaluator 求值
     Tuple outputRow;
-    for (const auto& proj : projections_) {
-        auto evalResult = evaluator_.evaluate(proj);
-        if (!evalResult.isSuccess()) {
-            return Result<std::optional<Tuple>>(evalResult.getError());
+    size_t groupByColCount = child_->getColumnNames().size() - projections_.size();
+
+    for (size_t i = 0; i < projections_.size(); ++i) {
+        const auto& proj = projections_[i];
+
+        if (isAggregateFunc(proj)) {
+            // 聚合函数：直接取子算子输出的 GROUP BY 列之后的位置
+            size_t idx = groupByColCount + i;
+            if (idx < inputRow.size()) {
+                outputRow.push_back(inputRow[idx]);
+            } else {
+                outputRow.push_back(Value()); // NULL
+            }
+        } else {
+            auto evalResult = evaluator_.evaluate(proj);
+            if (!evalResult.isSuccess()) {
+                return Result<std::optional<Tuple>>(evalResult.getError());
+            }
+            outputRow.push_back(*evalResult.getValue());
         }
-        outputRow.push_back(*evalResult.getValue());
     }
 
     return Result<std::optional<Tuple>>(outputRow);
@@ -90,6 +118,10 @@ std::vector<DataType> ProjectOperator::getColumnTypes() const {
     return columnTypes_;
 }
 
+std::string ProjectOperator::getTableName() const {
+    return child_->getTableName();
+}
+
 RowContext ProjectOperator::buildRowContext(const Tuple& row) {
     RowContext context;
 
@@ -98,7 +130,20 @@ RowContext ProjectOperator::buildRowContext(const Tuple& row) {
 
     // 构建列名到值的映射
     for (size_t i = 0; i < columnNames.size() && i < row.size(); ++i) {
-        context[columnNames[i]] = row[i];
+        const std::string& fullColumnName = columnNames[i];
+
+        // 添加完整列名（可能包含表名前缀，如 "users.name"）
+        context[fullColumnName] = row[i];
+
+        // 如果列名包含表名前缀，也注册不带前缀的列名（用于向后兼容）
+        size_t dotPos = fullColumnName.find('.');
+        if (dotPos != std::string::npos) {
+            std::string shortName = fullColumnName.substr(dotPos + 1);
+            // 只有当没有冲突时才添加短名称
+            if (context.find(shortName) == context.end()) {
+                context[shortName] = row[i];
+            }
+        }
     }
 
     return context;
@@ -187,12 +232,13 @@ DataType ProjectOperator::deriveExpressionType(parser::ExprPtr expr) {
             auto funcCall = static_cast<parser::FunctionCallExpr*>(expr.get());
             const std::string& funcName = funcCall->getFuncName();
 
-            // 聚合函数类型推导需要更复杂的逻辑
-            if (funcName == "COUNT") return DataType::BIGINT;
-            if (funcName == "SUM") return DataType::DOUBLE;
-            if (funcName == "AVG") return DataType::DOUBLE;
-            if (funcName == "MAX" || funcName == "MIN") {
-                // 返回参数类型
+            // 聚合函数类型推导
+            std::string upperName = funcName;
+            std::transform(upperName.begin(), upperName.end(), upperName.begin(), ::toupper);
+            if (upperName == "COUNT") return DataType::BIGINT;
+            if (upperName == "SUM") return DataType::DOUBLE;
+            if (upperName == "AVG") return DataType::DOUBLE;
+            if (upperName == "MAX" || upperName == "MIN") {
                 if (!funcCall->getArgs().empty()) {
                     return deriveExpressionType(funcCall->getArgs()[0]);
                 }
@@ -200,8 +246,8 @@ DataType ProjectOperator::deriveExpressionType(parser::ExprPtr expr) {
             }
 
             // 标量函数
-            if (funcName == "UPPER" || funcName == "LOWER" ||
-                funcName == "CONCAT" || funcName == "LENGTH") {
+            if (upperName == "UPPER" || upperName == "LOWER" ||
+                upperName == "CONCAT" || upperName == "LENGTH") {
                 return DataType::VARCHAR;
             }
 

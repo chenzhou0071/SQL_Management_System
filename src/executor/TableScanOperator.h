@@ -43,6 +43,9 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 获取表名
+    std::string getTableName() const override;
+
 private:
     std::string dbName_;
     std::string tableName_;

@@ -43,6 +43,9 @@ public:
     // 获取输出列类型
     virtual std::vector<DataType> getColumnTypes() const = 0;
 
+    // 获取表名 (用于 JOIN 条件中的列名解析)
+    virtual std::string getTableName() const = 0;
+
     // 获取子算子 (如果有)
     virtual std::vector<std::shared_ptr<ExecutionOperator>> getChildren() const {
         return children_;

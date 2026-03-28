@@ -187,8 +187,14 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement() {
         advance();
         // * 可以表示为空列表或特殊的标记
     } else {
-        while (!checkKeyword("FROM") && !check(TokenType::EOF_TOKEN)) {
-            ExprPtr expr = parseExpression();
+        while (!checkKeyword("FROM") && !check(TokenType::EOF_TOKEN) && !checkKeyword("AS")) {
+            ExprPtr expr;
+            try {
+                expr = parseExpression();
+            } catch (const MiniSQLException& e) {
+                // 如果解析失败，可能是因为遇到了 GROUP BY 等关键字
+                break;
+            }
             stmt->selectItems.push_back(expr);
 
             if (!match(TokenType::COMMA)) {
@@ -197,26 +203,18 @@ std::shared_ptr<SelectStmt> Parser::parseSelectStatement() {
         }
     }
 
+    // 处理 SELECT expr AS alias 语法（跳过别名）
+    if (checkKeyword("AS")) {
+        advance();  // 跳过 AS
+        if (check(TokenType::IDENTIFIER)) {
+            advance();  // 跳过别名
+        }
+    }
+
     // FROM 子句
     if (matchKeyword("FROM")) {
-        if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-            auto tableRef = std::make_shared<TableRef>();
-            tableRef->name = current_.value;
-            advance();
-
-            // 检查别名 (只检查 AS 或标识符)
-            if (checkKeyword("AS")) {
-                advance();  // 跳过 AS
-                if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-                    tableRef->alias = current_.value;
-                    advance();
-                }
-            } else if (check(TokenType::IDENTIFIER)) {
-                // 别名不需要 AS
-                tableRef->alias = current_.value;
-                advance();
-            }
-
+        auto tableRef = parseTableRef();
+        if (tableRef) {
             stmt->fromTable = tableRef;
         }
 
@@ -1141,6 +1139,14 @@ ExprPtr Parser::parsePrimaryExpression() {
         return std::make_shared<LiteralExpr>(value);
     }
 
+    // COUNT(*) 中的 * 表示"所有行"的特殊标记
+    // 返回一个字符串字面量 "*"，执行器会识别它
+    if (check(TokenType::OPERATOR) && current_.value == "*") {
+        advance();
+        Value starValue("*");
+        return std::make_shared<LiteralExpr>(starValue);
+    }
+
     // 函数调用
     if (check(TokenType::IDENTIFIER)) {
         std::string name = current_.value;
@@ -1184,13 +1190,6 @@ ExprPtr Parser::parsePrimaryExpression() {
     // 括号表达式
     if (check(TokenType::LEFT_PAREN)) {
         advance();
-        // 检查是否是子查询
-        if (checkKeyword("SELECT")) {
-            // 子查询
-            auto subquery = parseSelectStatement();
-            expect(TokenType::RIGHT_PAREN, "Expected ')' after subquery");
-            return std::make_shared<SubqueryExpr>(subquery);
-        }
         ExprPtr expr = parseExpression();
         expect(TokenType::RIGHT_PAREN, "Expected ')'");
         return expr;
@@ -1201,7 +1200,68 @@ ExprPtr Parser::parsePrimaryExpression() {
 }
 
 std::shared_ptr<TableRef> Parser::parseTableRef() {
-    throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "TableRef not implemented yet");
+    auto tableRef = std::make_shared<TableRef>();
+
+    // 检查是否是子查询：FROM (SELECT ...) AS alias
+    if (match(TokenType::LEFT_PAREN)) {
+        // 解析子查询
+        auto selectStmt = parseSelectStatement();
+        if (!selectStmt) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected SELECT statement in subquery");
+        }
+
+        expect(TokenType::RIGHT_PAREN, "Expected ) after subquery");
+
+        tableRef->subquery = selectStmt;
+
+        // 检查是否有 AS alias
+        if (matchKeyword("AS")) {
+            if (check(TokenType::IDENTIFIER)) {
+                tableRef->alias = current_.value;
+                advance();
+            }
+        } else if (check(TokenType::IDENTIFIER)) {
+            // 没有 AS 关键字，直接是别名
+            tableRef->alias = current_.value;
+            advance();
+        } else {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Subquery in FROM clause requires an alias");
+        }
+
+        return tableRef;
+    }
+
+    // 普通表引用：table_name 或 database.table_name
+    if (!check(TokenType::IDENTIFIER)) {
+        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected table name");
+    }
+
+    tableRef->name = current_.value;
+    advance();
+
+    // 检查是否有 database.table_name 格式
+    if (match(TokenType::DOT)) {
+        if (!check(TokenType::IDENTIFIER)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected table name after dot");
+        }
+        tableRef->database = tableRef->name;
+        tableRef->name = current_.value;
+        advance();
+    }
+
+    // 检查是否有 AS alias
+    if (matchKeyword("AS")) {
+        if (check(TokenType::IDENTIFIER)) {
+            tableRef->alias = current_.value;
+            advance();
+        }
+    } else if (check(TokenType::IDENTIFIER)) {
+        // 没有 AS 关键字，直接是别名
+        tableRef->alias = current_.value;
+        advance();
+    }
+
+    return tableRef;
 }
 
 std::shared_ptr<JoinClause> Parser::parseJoinClause() {

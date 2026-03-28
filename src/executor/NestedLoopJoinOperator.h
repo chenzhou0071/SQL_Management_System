@@ -17,7 +17,8 @@ class NestedLoopJoinOperator : public ExecutionOperator {
 public:
     enum class JoinType {
         INNER,
-        LEFT
+        LEFT,
+        RIGHT
     };
 
     // 构造函数
@@ -42,6 +43,9 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 获取表名 (返回左表名)
+    std::string getTableName() const override;
+
 private:
     OperatorPtr left_;
     OperatorPtr right_;
@@ -50,10 +54,14 @@ private:
     ExpressionEvaluator evaluator_;
     bool isOpen_;
 
-    // 连接状态
+    // 连��状态
     std::optional<Tuple> currentLeftRow_;
     std::vector<Tuple> rightRows_;
     size_t rightRowIndex_;
+    bool leftRowMatched_;   // LEFT JOIN: 记录当前左行是否匹配过
+    std::vector<bool> rightRowsMatched_;  // RIGHT JOIN: 记录每个右行是否匹配过
+    size_t rightRowsIndex_;  // RIGHT JOIN 第二阶段：遍历未匹配的右行
+    bool inRightJoinPhase2_;  // RIGHT JOIN：是否在第二阶段
 
     // 缓存的列名和类型
     std::vector<std::string> columnNames_;

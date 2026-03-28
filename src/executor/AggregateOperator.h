@@ -27,7 +27,8 @@ public:
     // 构造函数
     AggregateOperator(OperatorPtr child,
                      const std::vector<parser::ExprPtr>& groupByExprs,
-                     const std::vector<AggregateFunc>& aggregates);
+                     const std::vector<AggregateFunc>& aggregates,
+                     parser::ExprPtr havingClause = nullptr);
 
     // 析构函数
     ~AggregateOperator() override;
@@ -47,10 +48,14 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 获取表名 (委托给子算子)
+    std::string getTableName() const override;
+
 private:
     OperatorPtr child_;
     std::vector<parser::ExprPtr> groupByExprs_;
     std::vector<AggregateFunc> aggregates_;
+    parser::ExprPtr havingClause_;  // HAVING 条件
     ExpressionEvaluator evaluator_;
     bool isOpen_;
 

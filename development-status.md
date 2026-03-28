@@ -576,13 +576,62 @@ tests/
 
 ---
 
+### ✅ Phase 7: 高级 SELECT 支持
+
+**实现时间**: 2026-03-28
+
+**核心功能**:
+
+#### 7.1 JOIN 执行计划生成
+- ✅ `PlanGenerator` 遍历 `selectStmt->joins` 生成 NestedLoopJoin 节点
+- ✅ `NestedLoopJoinOperator` 实现 INNER/LEFT/RIGHT JOIN
+- ✅ 多表连接：遍历 JOIN 列表逐个串联，自动支持三表及以上
+
+#### 7.2 FROM 子查询支持
+- ✅ `TableRef` 结构增加 `subquery` 字段
+- ✅ `Parser::parseTableRef()` 识别 `(` 开始子查询
+- ✅ `SubqueryScanOperator` 封装子计划并递归执行
+- ✅ `SELECT * FROM (SELECT ...) AS t` 正常工作
+
+#### 7.3 HAVING 子句完善
+- ✅ `AggregateOperator` 正确传递 `havingClause` 给 `AggregateOperator`
+- ✅ `PlanGenerator::generateAggregateNode()` 接收并传递 HAVING 条件
+
+#### 7.4 关键 Bug 修复
+- ✅ **Result<T> 悬空指针修复**：所有 `const T& val = *result.getValue()` 改为 `Value val = *result.getValue()`，避免 `~Result()` 销毁堆内存后引用悬空。涉及文件：
+  - `AggregateOperator.cpp` (`buildGroups`, `next`)
+  - `FilterOperator.cpp`
+  - `NestedLoopJoinOperator.cpp`
+  - `SortOperator.cpp`
+  - `DMLExecutor.cpp` (两处 WHERE 条件)
+  - `ExpressionEvaluator.cpp` (多处二元/一元/IN 子查询表达式)
+- ✅ **ProjectOperator 聚合函数崩溃修复**：`ExpressionEvaluator::evaluateAggregate` 对 `COUNT/SUM/AVG` 返回错误（因为聚合已在 AggregateOperator 预计算）。修复：ProjectOperator 检测聚合函数投影时，直接从子算子输出的 GROUP BY 列之后位置取值，避免重复求值
+- ✅ **HAVING 条件重新启用**：修复悬空指针后，`AggregateOperator::next()` 中的 HAVING 过滤逻辑恢复正常
+- ✅ **索引选择恢复**：`PlanGenerator::generateScanNode()` 中被注释的索引选择代码恢复，并修复指针解引用（`IndexSelector` 结果正确传递 `indexName` 和 `scanType`）
+
+**测试覆盖**:
+- `test_join`: INNER/LEFT/RIGHT JOIN，多表连接 — 全部通过
+- `test_from_subquery`: FROM 子查询，FROM 子查询 + JOIN — 全部通过
+- `test_having`: GROUP BY，GROUP BY + HAVING — 全部通过
+
+**新增文件清单**:
+```
+src/executor/
+├── SubqueryScanOperator.h/cpp  # FROM 子查询扫描算子
+
+tests/
+├── test_join.cpp              # JOIN 执行测试
+├── test_from_subquery.cpp     # FROM 子查询测试
+└── test_having.cpp           # HAVING 子句测试
+```
+
+---
+
 ## 未实现功能
 
 | 模块 | 功能 | 预估工作量 |
 |------|------|-----------|
-| **Parser** | 标量子查询解析 `(SELECT MAX(id) FROM ...)` | 100-150 行 |
 | **Parser** | 比较运算符子查询 `(SELECT ...) > ANY/ALL (...)` | 50-100 行 |
-| **Executor** | 标量子查询执行（返回单值） | 100-150 行 |
 | **Executor** | 关联子查询处理（需外部行上下文） | 200-300 行 |
 | **Executor** | 比较运算符子查询 ALL/ANY | 100-150 行 |
 | **Executor** | 子查询去关联化 | 100-200 行 |
@@ -736,6 +785,9 @@ cmake --build . --target executor
 ./bin/test_subquery.exe
 ./bin/test_integration.exe
 ./bin/test_foreign_key.exe
+./bin/test_join.exe
+./bin/test_from_subquery.exe
+./bin/test_having.exe
 
 # 优化器测试
 ./bin/test_rule_optimizer.exe
@@ -775,8 +827,16 @@ cmake --build . --target executor
 - **test_integration**: 通过
 - **test_subquery**: 通过
 - **test_foreign_key**: 通过
+- **test_join**: 通过 (Phase 7)
+- **test_from_subquery**: 通过 (Phase 7)
+- **test_having**: 通过 (Phase 7)
 
-**累计测试**: 1400+ 测试通过 (13 个测试套件全部通过)
+**累计测试**: 29/29 测试套件全部通过
+- **test_join**: 通过 (Phase 7)
+- **test_from_subquery**: 通过 (Phase 7)
+- **test_having**: 通过 (Phase 7)
+
+**累计测试**: 1400+ 测试通过 (29 个测试套件全部通过)
 
 ---
 
@@ -805,7 +865,7 @@ E:\pro\SQL_Management_System\
 │   │   ├── Parser.h/cpp
 │   │   └── SemanticAnalyzer.h/cpp
 │   │
-│   ├── executor/        # 查询执行器 (Phase 4)
+│   ├── executor/        # 查询执行器 (Phase 4, Phase 7)
 │   │   ├── ExecutionOperator.h/cpp
 │   │   ├── ExpressionEvaluator.h/cpp
 │   │   ├── TableScanOperator.h/cpp
@@ -815,6 +875,7 @@ E:\pro\SQL_Management_System\
 │   │   ├── AggregateOperator.h/cpp
 │   │   ├── SortOperator.h/cpp
 │   │   ├── LimitOperator.h/cpp
+│   │   ├── SubqueryScanOperator.h/cpp  # Phase 7: FROM 子查询
 │   │   ├── DMLExecutor.h/cpp
 │   │   ├── DDLExecutor.h/cpp
 │   │   └── Executor.h/cpp
@@ -843,7 +904,10 @@ E:\pro\SQL_Management_System\
 │   ├── test_executor.cpp
 │   ├── test_subquery.cpp
 │   ├── test_integration.cpp
-│   └── test_foreign_key.cpp
+│   ├── test_foreign_key.cpp
+│   ├── test_join.cpp              # Phase 7
+│   ├── test_from_subquery.cpp     # Phase 7
+│   └── test_having.cpp           # Phase 7
 │
 ├── build/               # 编译输出
 │   └── bin/
@@ -916,7 +980,7 @@ data/demo_db/
 - **1393cfa**: feat(storage): 实现 B+ 树索引持久化
 - **00b9b88**: feat(parser): 实现 ALTER TABLE 和函数调用表达式
 - **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
-- **(本次)**: feat(parser+executor): 实现外键约束检查（INSERT/UPDATE）+ 索引选择修复
+- **(本次)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
 
 ---
 
@@ -927,4 +991,4 @@ data/demo_db/
 
 ---
 
-*最后更新: 2026-03-28 (Phase 6 完成，外键约束 + 索引选择修复)*
+*最后更新: 2026-03-28 (Phase 7 完成，29/29 测试通过)*

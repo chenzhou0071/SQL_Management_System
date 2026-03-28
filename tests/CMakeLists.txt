@@ -146,3 +146,18 @@ add_test(NAME integration_tests COMMAND test_integration)
 add_executable(test_foreign_key test_foreign_key.cpp)
 target_link_libraries(test_foreign_key PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
 add_test(NAME foreign_key_tests COMMAND test_foreign_key)
+
+# JOIN 执行测试 (Phase 7)
+add_executable(test_join test_join.cpp)
+target_link_libraries(test_join PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME join_tests COMMAND test_join)
+
+# FROM 子查询测试 (Phase 7)
+add_executable(test_from_subquery test_from_subquery.cpp)
+target_link_libraries(test_from_subquery PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME from_subquery_tests COMMAND test_from_subquery)
+
+# HAVING 子句测试 (Phase 7)
+add_executable(test_having test_having.cpp)
+target_link_libraries(test_having PRIVATE executor optimizer parser common storage Qt${QT_VERSION_MAJOR}::Core)
+add_test(NAME having_tests COMMAND test_having)

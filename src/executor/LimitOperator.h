@@ -34,6 +34,9 @@ public:
     // 获取输出列类型
     std::vector<DataType> getColumnTypes() const override;
 
+    // 获取表名 (委托给子算子)
+    std::string getTableName() const override;
+
 private:
     OperatorPtr child_;
     size_t limit_;      // 限制返回的行数

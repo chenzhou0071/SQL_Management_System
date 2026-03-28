@@ -94,5 +94,9 @@ std::vector<DataType> LimitOperator::getColumnTypes() const {
     return child_->getColumnTypes();
 }
 
+std::string LimitOperator::getTableName() const {
+    return child_->getTableName();
+}
+
 } // namespace executor
 } // namespace minisql
