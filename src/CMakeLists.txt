@@ -38,12 +38,6 @@ add_subdirectory(executor)
 # 优化器
 add_subdirectory(optimizer)
 
-# 事务管理
-add_subdirectory(transaction)
-
-# 应用层（GUI/CLI）
-add_subdirectory(application)
-
 # 主程序
 add_executable(minisql
     main.cpp
