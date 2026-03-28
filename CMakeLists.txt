@@ -82,8 +82,7 @@ else()
     # ========================================
     # Windows GUI版本
     # ========================================
-    add_subdirectory(src/transaction)
-    add_subdirectory(src/application)
+    add_subdirectory(src/client)
 
     add_executable(minisql
         src/main.cpp
@@ -96,8 +95,7 @@ else()
             parser
             executor
             optimizer
-            transaction
-            application
+            client_gui
             Qt${QT_VERSION_MAJOR}::Core
             Qt${QT_VERSION_MAJOR}::Widgets
             Qt${QT_VERSION_MAJOR}::Gui
