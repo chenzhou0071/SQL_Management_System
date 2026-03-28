@@ -1,6 +1,5 @@
 add_library(server_concurrency STATIC)
 target_sources(server_concurrency PRIVATE
-    RWLock.cpp
     LockManager.cpp
 )
 target_include_directories(server_concurrency PUBLIC ${CMAKE_SOURCE_DIR}/src)
