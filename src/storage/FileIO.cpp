@@ -3,6 +3,12 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <functional>
+#include <memory>
+
+#ifdef __linux__
+#include "../server/concurrency/LockManager.h"
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
@@ -117,6 +123,15 @@ bool FileIO::renameFile(const std::string& oldPath, const std::string& newPath) 
 
 bool FileIO::writeToFile(const std::string& path, const std::string& content) {
     try {
+#ifdef __linux__
+        minisql::LockManager::getInstance().acquireFileLock(path);
+        auto finally = std::unique_ptr<bool, std::function<void(bool*)>>(
+            new bool(true),
+            [&path](bool*) {
+                minisql::LockManager::getInstance().releaseFileLock(path);
+            }
+        );
+#endif
         std::ofstream file(path);
         if (!file.is_open()) {
             LOG_ERROR("FileIO", std::string("Cannot open file for writing: ") + path);
@@ -133,6 +148,15 @@ bool FileIO::writeToFile(const std::string& path, const std::string& content) {
 
 std::string FileIO::readFromFile(const std::string& path) {
     try {
+#ifdef __linux__
+        minisql::LockManager::getInstance().acquireFileLock(path);
+        auto finally = std::unique_ptr<bool, std::function<void(bool*)>>(
+            new bool(true),
+            [&path](bool*) {
+                minisql::LockManager::getInstance().releaseFileLock(path);
+            }
+        );
+#endif
         std::ifstream file(path);
         if (!file.is_open()) {
             LOG_ERROR("FileIO", std::string("Cannot open file for reading: ") + path);
@@ -150,6 +174,15 @@ std::string FileIO::readFromFile(const std::string& path) {
 
 bool FileIO::appendToFile(const std::string& path, const std::string& content) {
     try {
+#ifdef __linux__
+        minisql::LockManager::getInstance().acquireFileLock(path);
+        auto finally = std::unique_ptr<bool, std::function<void(bool*)>>(
+            new bool(true),
+            [&path](bool*) {
+                minisql::LockManager::getInstance().releaseFileLock(path);
+            }
+        );
+#endif
         std::ofstream file(path, std::ios::app);
         if (!file.is_open()) {
             LOG_ERROR("FileIO", std::string("Cannot open file for appending: ") + path);
