@@ -167,21 +167,21 @@ add_test(NAME having_tests COMMAND test_having)
 # ============================================
 if(BUILD_SERVER)
     # 并发测试
-    add_executable(test_concurrency tests/server/test_concurrency.cpp)
+    add_executable(test_concurrency ${CMAKE_CURRENT_SOURCE_DIR}/server/test_concurrency.cpp)
     target_link_libraries(test_concurrency PRIVATE
         server_concurrency
         pthread
     )
 
     # 事务测试
-    add_executable(test_transaction tests/server/test_transaction.cpp)
+    add_executable(test_transaction ${CMAKE_CURRENT_SOURCE_DIR}/server/test_transaction.cpp)
     target_link_libraries(test_transaction PRIVATE
         server_transaction
         pthread
     )
 
     # 网络测试
-    add_executable(test_network tests/server/test_network.cpp)
+    add_executable(test_network ${CMAKE_CURRENT_SOURCE_DIR}/server/test_network.cpp)
     target_link_libraries(test_network PRIVATE
         server_network
         pthread
