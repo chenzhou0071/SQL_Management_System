@@ -144,18 +144,19 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt) {
                 return Result<ExecutionResult>(result);
             }
 
+            case parser::ASTNodeType::CREATE_DATABASE_STMT: {
+                auto createDBStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt);
+                return DDLExecutor::executeCreateDatabase(createDBStmt);
+            }
+
+            case parser::ASTNodeType::CREATE_INDEX_STMT: {
+                auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt);
+                return DDLExecutor::executeCreateIndex(currentDatabase_, createIdxStmt);
+            }
+
             case parser::ASTNodeType::CREATE_STMT: {
-                // 尝试转换为不同类型的 CREATE 语句
-                if (auto createDBStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt)) {
-                    return DDLExecutor::executeCreateDatabase(createDBStmt);
-                } else if (auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt)) {
-                    return DDLExecutor::executeCreateIndex(currentDatabase_, createIdxStmt);
-                } else if (auto createTableStmt = dynamic_cast<parser::CreateTableStmt*>(stmt)) {
-                    return DDLExecutor::executeCreateTable(currentDatabase_, createTableStmt);
-                } else {
-                    return Result<ExecutionResult>(
-                        MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unknown CREATE statement type"));
-                }
+                auto createTableStmt = dynamic_cast<parser::CreateTableStmt*>(stmt);
+                return DDLExecutor::executeCreateTable(currentDatabase_, createTableStmt);
             }
 
             case parser::ASTNodeType::DROP_STMT: {

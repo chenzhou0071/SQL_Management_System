@@ -17,7 +17,7 @@ if(NOT BUILD_SERVER)
 
     # 存储模块测试
     add_executable(test_storage test_storage.cpp)
-    target_link_libraries(test_storage PRIVATE storage common server_concurrency test_utils)
+    target_link_libraries(test_storage PRIVATE storage common test_utils)
     add_test(NAME storage_tests COMMAND test_storage)
 
     # 文件生成演示

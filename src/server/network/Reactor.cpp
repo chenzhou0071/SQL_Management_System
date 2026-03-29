@@ -92,6 +92,11 @@ void Reactor::stop() {
     threadPool_->stop();
 }
 
+void Reactor::removeFromEpoll(int fd) {
+    epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr);
+    close(fd);
+}
+
 void Reactor::eventLoop() {
     const int MAX_EVENTS = 64;
     struct epoll_event events[MAX_EVENTS];
@@ -105,8 +110,8 @@ void Reactor::eventLoop() {
             if (fd == listenFd_) {
                 // 新连接
                 handleNewConnection();
-            } else if (events[i].events & EPOLLIN) {
-                // 可读事件
+            } else if (events[i].events & (EPOLLIN | EPOLLERR | EPOLLHUP)) {
+                // 可读事件或错误/挂起
                 handleRead(fd);
             }
         }
@@ -126,16 +131,14 @@ void Reactor::handleNewConnection() {
     int flags = fcntl(clientFd, F_GETFL, 0);
     fcntl(clientFd, F_SETFL, flags | O_NONBLOCK);
 
-    // 注册到epoll
+    // 注册到epoll，使用oneshot防止重复触发
     struct epoll_event ev;
-    ev.events = EPOLLIN;
+    ev.events = EPOLLIN | EPOLLONESHOT;
     ev.data.fd = clientFd;
-    epoll_ctl(epollFd_, EPOLL_CTL_ADD, clientFd, &ev);
-
-    char ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &clientAddr.sin_addr, ip, sizeof(ip));
-    LOG_INFO("Reactor", "New connection from " + std::string(ip) + ":" +
-                       std::to_string(ntohs(clientAddr.sin_port)));
+    if (epoll_ctl(epollFd_, EPOLL_CTL_ADD, clientFd, &ev) < 0) {
+        close(clientFd);
+        return;
+    }
 }
 
 void Reactor::handleRead(int fd) {
@@ -143,10 +146,8 @@ void Reactor::handleRead(int fd) {
     ssize_t n = read(fd, buf, sizeof(buf) - 1);
 
     if (n <= 0) {
-        // 连接关闭或错误
-        epoll_ctl(epollFd_, EPOLL_CTL_DEL, fd, nullptr);
-        close(fd);
-        LOG_INFO("Reactor", "Connection closed, fd=" + std::to_string(fd));
+        // 连接关闭或错误，移除并关闭
+        removeFromEpoll(fd);
         return;
     }
 
@@ -154,15 +155,24 @@ void Reactor::handleRead(int fd) {
     std::string sql(buf);
 
     // 去除换行符
-    sql.erase(sql.find_last_not_of(" \t\r\n") + 1);
-
-    if (!sql.empty() && sqlHandler_) {
-        // 提交到线程池处理
-        int clientFd = fd;
-        threadPool_->submit([this, clientFd, sql]() {
-            sqlHandler_(clientFd, sql);
-        });
+    size_t end = sql.find_last_not_of(" \t\r\n");
+    if (end == std::string::npos) {
+        sql.clear();
+    } else {
+        sql = sql.substr(0, end + 1);
     }
+
+    if (sql.empty() || !sqlHandler_) {
+        removeFromEpoll(fd);
+        return;
+    }
+
+    // 提交到线程池处理
+    int clientFd = fd;
+    threadPool_->submit([this, clientFd, sql]() {
+        sqlHandler_(clientFd, sql);
+        removeFromEpoll(clientFd);
+    });
 }
 
 }  // namespace minisql

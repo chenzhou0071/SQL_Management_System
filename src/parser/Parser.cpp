@@ -496,15 +496,17 @@ std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
         match(TokenType::SEMICOLON);
         return stmt;
 
-    } else if (checkKeyword("INDEX")) {
-        advance();
+    } else if (checkKeyword("INDEX") || checkKeyword("UNIQUE")) {
         auto stmt = std::make_shared<CreateIndexStmt>();
         stmt->ifNotExists = ifNotExists;
 
         // 检查是否是 UNIQUE INDEX
-        if (!ifNotExists && checkKeyword("UNIQUE")) {
+        if (checkKeyword("UNIQUE")) {
             stmt->unique = true;
             advance();
+            expectKeyword("INDEX", "Expected INDEX after UNIQUE");
+        } else {
+            advance();  // 跳过 INDEX 关键字
         }
 
         // 索引名
@@ -1012,8 +1014,11 @@ std::shared_ptr<DropStmt> Parser::parseDropStatement() {
     } else if (checkKeyword("DATABASE")) {
         stmt->objectType = "DATABASE";
         advance();
+    } else if (checkKeyword("INDEX")) {
+        stmt->objectType = "INDEX";
+        advance();
     } else {
-        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected TABLE or DATABASE after DROP");
+        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected TABLE, DATABASE or INDEX after DROP");
     }
 
     // 对象名

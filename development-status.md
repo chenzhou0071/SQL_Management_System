@@ -1014,7 +1014,7 @@ cmake --build . --target executor
 - **test_from_subquery**: 通过 (Phase 7)
 - **test_having**: 通过 (Phase 7)
 
-**累计测试**: 1400+ 测试通过 (29 个测试套件全部通过)
+**累计测试**: 1426 测试通过 (29 个测试套件全部通过)
 
 ---
 
@@ -1161,6 +1161,12 @@ data/demo_db/
 - **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
 - **(Phase 7)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
 - **(Phase 8)**: feat(Phase 8): Linux 服务器实现 - Reactor + Thread Pool + 事务管理 + WAL + 并发控制 + SQL 执行器集成
+- **2026-03-29**: fix(parser): 修复 CREATE INDEX 和 DROP INDEX 解析问题
+  - 修复 CREATE UNIQUE INDEX 解析顺序（UNIQUE 应在 INDEX 之前）
+  - 添加 DROP INDEX 支持（parseDropStatement 添加 INDEX 类型）
+  - 修复 Parser.cpp 大括号结构问题
+  - 所有 1426 个测试通过（包括 84 个 parser 测试）
+  - 测试覆盖：CREATE DATABASE, CREATE INDEX, DROP INDEX 完整支持
 
 ---
 

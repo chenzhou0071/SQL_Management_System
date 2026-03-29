@@ -7,6 +7,7 @@
 #include <functional>
 #include <atomic>
 #include <thread>
+#include <mutex>
 
 namespace minisql {
 
@@ -36,6 +37,7 @@ private:
     void eventLoop();
     int createEpoll();
     int createListenSocket(int port);
+    void removeFromEpoll(int fd);
 
     int epollFd_;
     int listenFd_;

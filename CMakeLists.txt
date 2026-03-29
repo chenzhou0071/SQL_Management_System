@@ -12,11 +12,11 @@ option(BUILD_SERVER "Build Linux server version" OFF)
 # 输出目录设置
 # ============================================
 if(BUILD_SERVER)
-    # Linux服务器: build_server/bin/
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build_server/bin)
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build_server/lib)
+    # Linux服务器: build_linux/bin/
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build_linux/bin)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build_linux/lib)
     message(STATUS "Building Server Version")
-    message(STATUS "Output: ${CMAKE_SOURCE_DIR}/build_server/bin")
+    message(STATUS "Output: ${CMAKE_SOURCE_DIR}/build_linux/bin")
 else()
     # Windows GUI版本: build/bin/
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

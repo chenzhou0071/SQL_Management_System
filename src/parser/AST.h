@@ -24,6 +24,8 @@ enum class ASTNodeType {
     UPDATE_STMT,
     DELETE_STMT,
     CREATE_STMT,
+    CREATE_DATABASE_STMT,
+    CREATE_INDEX_STMT,
     DROP_STMT,
     ALTER_STMT,
     USE_STMT,
@@ -448,7 +450,7 @@ public:
 // ============================================================
 class CreateDatabaseStmt : public ASTNode {
 public:
-    CreateDatabaseStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false) {}
+    CreateDatabaseStmt() : ASTNode(ASTNodeType::CREATE_DATABASE_STMT), ifNotExists(false) {}
 
     std::string database;
     bool ifNotExists;
@@ -463,7 +465,7 @@ public:
 // ============================================================
 class CreateIndexStmt : public ASTNode {
 public:
-    CreateIndexStmt() : ASTNode(ASTNodeType::CREATE_STMT), unique(false), ifNotExists(false) {}
+    CreateIndexStmt() : ASTNode(ASTNodeType::CREATE_INDEX_STMT), unique(false), ifNotExists(false) {}
 
     std::string indexName;
     std::string tableName;

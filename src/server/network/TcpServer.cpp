@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <cstring>
+#include <errno.h>
 
 namespace minisql {
 
@@ -29,32 +31,52 @@ TcpServer::TcpServer(int port, int threadCount)
 
     // 设置SQL处理函数
     reactor_->setSqlHandler([this](int fd, const std::string& sql) {
+        LOG_INFO("TcpServer", "=== SQL Handler Start ===");
+        LOG_INFO("TcpServer", "Received SQL: [" + sql + "]");
+        LOG_INFO("TcpServer", "SQL length: " + std::to_string(sql.length()));
+
         SqlResponse response;
 
         try {
+            LOG_INFO("TcpServer", "Step 1: Creating Lexer...");
             // 解析 SQL
             parser::Lexer lexer(sql);
+            LOG_INFO("TcpServer", "Step 2: Lexer created, creating Parser...");
+
             parser::Parser parser(lexer);
+            LOG_INFO("TcpServer", "Step 3: Parser created, parsing statement...");
+
             auto stmt = parser.parseStatement();
+            LOG_INFO("TcpServer", "Step 4: Statement parsed, type: " + std::to_string(static_cast<int>(stmt->getType())));
 
             // 执行 SQL
+            LOG_INFO("TcpServer", "Step 5: Getting Executor instance...");
             auto& executor = executor::Executor::getInstance();
+            LOG_INFO("TcpServer", "Step 6: Executor instance obtained, executing statement...");
+
             auto execResult = executor.execute(stmt.get());
+            LOG_INFO("TcpServer", "Step 7: Statement executed, checking result...");
 
             if (!execResult.isSuccess()) {
+                LOG_INFO("TcpServer", "Step 8a: Execution failed");
                 response.success = false;
                 response.message = execResult.getError().what();
+                LOG_INFO("TcpServer", "Error message: " + response.message);
             } else {
+                LOG_INFO("TcpServer", "Step 8b: Execution succeeded");
                 response.success = true;
                 response.message = "Query OK";
 
                 // 获取列名和数据
+                LOG_INFO("TcpServer", "Step 9: Releasing result...");
                 auto* result = execResult.release();
                 if (result) {
+                    LOG_INFO("TcpServer", "Step 10: Result obtained, row count: " + std::to_string(result->getRowCount()));
                     response.rowCount = result->getRowCount();
                     response.columns = result->columnNames;
 
                     // 转换 Tuple -> vector<string>
+                    LOG_INFO("TcpServer", "Step 11: Converting rows...");
                     for (auto& row : result->rows) {
                         std::vector<std::string> rowStr;
                         for (auto& val : row) {
@@ -62,20 +84,45 @@ TcpServer::TcpServer(int port, int threadCount)
                         }
                         response.rows.push_back(std::move(rowStr));
                     }
+                    LOG_INFO("TcpServer", "Step 12: Rows converted, count: " + std::to_string(response.rows.size()));
+                } else {
+                    LOG_INFO("TcpServer", "Step 10: No result data");
                 }
             }
 
         } catch (const MiniSQLException& e) {
+            LOG_ERROR("TcpServer", "MiniSQLException caught: " + std::string(e.what()));
             response.success = false;
             response.message = e.what();
         } catch (const std::exception& e) {
+            LOG_ERROR("TcpServer", "std::exception caught: " + std::string(e.what()));
             response.success = false;
             response.message = std::string("Internal error: ") + e.what();
-            LOG_ERROR("TcpServer", "Unhandled exception: " + std::string(e.what()));
+        } catch (...) {
+            LOG_ERROR("TcpServer", "Unknown exception caught");
+            response.success = false;
+            response.message = "Unknown error occurred";
         }
 
+        LOG_INFO("TcpServer", "Step 13: Building response...");
+        LOG_INFO("TcpServer", "  Columns count: " + std::to_string(response.columns.size()));
+        LOG_INFO("TcpServer", "  Rows count: " + std::to_string(response.rows.size()));
+        for (size_t i = 0; i < response.columns.size(); ++i) {
+            LOG_INFO("TcpServer", "  Column[" + std::to_string(i) + "]: " + response.columns[i]);
+        }
         std::string resp = SqlProtocol::buildResponse(response);
-        ::send(fd, resp.c_str(), resp.size(), 0);
+        LOG_INFO("TcpServer", "Step 14: Response built, size: " + std::to_string(resp.size()));
+        LOG_INFO("TcpServer", "Step 15: Sending response...");
+
+        // 直接发送响应
+        ssize_t sent = ::send(fd, resp.c_str(), resp.size(), 0);
+        if (sent < 0) {
+            LOG_ERROR("TcpServer", "send() failed: " + std::string(strerror(errno)));
+        } else {
+            LOG_INFO("TcpServer", "Response sent, bytes: " + std::to_string(sent));
+        }
+
+        LOG_INFO("TcpServer", "=== SQL Handler End ===");
     });
 }
 

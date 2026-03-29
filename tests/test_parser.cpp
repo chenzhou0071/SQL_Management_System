@@ -120,7 +120,7 @@ TEST(testParserParseCreateDatabase) {
     Parser parser(lexer);
     auto stmt = parser.parseStatement();
     ASSERT_NOT_NULL(stmt.get());
-    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_STMT));
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_DATABASE_STMT));
 
     auto createDbStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt.get());
     ASSERT_NOT_NULL(createDbStmt);
@@ -132,7 +132,7 @@ TEST(testParserParseCreateIndex) {
     Parser parser(lexer);
     auto stmt = parser.parseStatement();
     ASSERT_NOT_NULL(stmt.get());
-    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_STMT));
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_INDEX_STMT));
 
     auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
     ASSERT_NOT_NULL(createIdxStmt);
@@ -148,6 +148,7 @@ TEST(testParserParseCreateUniqueIndex) {
     Parser parser(lexer);
     auto stmt = parser.parseStatement();
     ASSERT_NOT_NULL(stmt.get());
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_INDEX_STMT));
 
     auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
     ASSERT_NOT_NULL(createIdxStmt);
@@ -159,6 +160,7 @@ TEST(testParserParseCreateCompositeIndex) {
     Parser parser(lexer);
     auto stmt = parser.parseStatement();
     ASSERT_NOT_NULL(stmt.get());
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_INDEX_STMT));
 
     auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
     ASSERT_NOT_NULL(createIdxStmt);
@@ -413,27 +415,71 @@ int main() {
     std::cout << "=== Parser Tests ===" << std::endl;
 
     testParserEmptyInput();
+    std::cout << "testParserEmptyInput passed" << std::endl;
+
     testParserParseUseStatement();
+    std::cout << "testParserParseUseStatement passed" << std::endl;
+
     testParserParseShowDatabases();
+    std::cout << "testParserParseShowDatabases passed" << std::endl;
+
     testParserParseShowTables();
+    std::cout << "testParserParseShowTables passed" << std::endl;
+
     testParserParseLiteralExpression();
+    std::cout << "testParserParseLiteralExpression passed" << std::endl;
+
     testParserParseColumnRef();
+    std::cout << "testParserParseColumnRef passed" << std::endl;
+
     testParserParseBinaryExpression();
+    std::cout << "testParserParseBinaryExpression passed" << std::endl;
+
     testParserParseComparisonExpression();
+    std::cout << "testParserParseComparisonExpression passed" << std::endl;
+
     testParserParseLogicalExpression();
+    std::cout << "testParserParseLogicalExpression passed" << std::endl;
+
     testParserParseInsertStatement();
+    std::cout << "testParserParseInsertStatement passed" << std::endl;
+
     testParserParseUpdateStatement();
+    std::cout << "testParserParseUpdateStatement passed" << std::endl;
+
     testParserParseDeleteStatement();
+    std::cout << "testParserParseDeleteStatement passed" << std::endl;
+
     testParserParseCreateTable();
+    std::cout << "testParserParseCreateTable passed" << std::endl;
+
     testParserParseCreateDatabase();
+    std::cout << "testParserParseCreateDatabase passed" << std::endl;
+
     testParserParseCreateIndex();
+    std::cout << "testParserParseCreateIndex passed" << std::endl;
+
     testParserParseCreateUniqueIndex();
+    std::cout << "testParserParseCreateUniqueIndex passed" << std::endl;
+
     testParserParseCreateCompositeIndex();
+    std::cout << "testParserParseCreateCompositeIndex passed" << std::endl;
+
     testParserParseDropTable();
+    std::cout << "testParserParseDropTable passed" << std::endl;
+
     testParserParseDropDatabase();
+    std::cout << "testParserParseDropDatabase passed" << std::endl;
+
     testParserParseDropIndex();
+    std::cout << "testParserParseDropIndex passed" << std::endl;
+
     testParserParseSelectWithJoin();
+    std::cout << "testParserParseSelectWithJoin passed" << std::endl;
+
     testParserParseSelectWithLeftJoin();
+    std::cout << "testParserParseSelectWithLeftJoin passed" << std::endl;
+
     testParserParseComplexSelect();
     testParserParseMultipleJoins();
     testParserParseSelectWithAlias();

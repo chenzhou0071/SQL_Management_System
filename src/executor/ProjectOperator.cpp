@@ -27,10 +27,17 @@ Result<void> ProjectOperator::open() {
         return openResult;
     }
 
-    // 缓存列名和类型（不需要读取第一行）
-    for (const auto& proj : projections_) {
-        columnNames_.push_back(deriveColumnName(proj));
-        columnTypes_.push_back(deriveExpressionType(proj));
+    // 缓存列名和类型
+    // 如果没有投影列表（SELECT *），直接使用子算子的列名和类型
+    if (projections_.empty()) {
+        columnNames_ = child_->getColumnNames();
+        columnTypes_ = child_->getColumnTypes();
+    } else {
+        // 有投影列表，遍历投影表达式
+        for (const auto& proj : projections_) {
+            columnNames_.push_back(deriveColumnName(proj));
+            columnTypes_.push_back(deriveExpressionType(proj));
+        }
     }
 
     isOpen_ = true;
@@ -67,6 +74,11 @@ Result<std::optional<Tuple>> ProjectOperator::next() {
     }
 
     const Tuple& inputRow = optTuple.value();
+
+    // 如果没有投影列表（SELECT *），直接返回子算子的数据
+    if (projections_.empty()) {
+        return Result<std::optional<Tuple>>(inputRow);
+    }
 
     // 构建行上下文（仅用于非聚合表达式）
     RowContext context = buildRowContext(inputRow);
