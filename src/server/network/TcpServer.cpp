@@ -35,6 +35,10 @@ TcpServer::TcpServer(int port, int threadCount)
         LOG_INFO("TcpServer", "Received SQL: [" + sql + "]");
         LOG_INFO("TcpServer", "SQL length: " + std::to_string(sql.length()));
 
+        // 获取当前连接的会话
+        auto& session = getOrCreateSession(fd);
+        std::string currentDb = session.getCurrentDatabase();
+
         SqlResponse response;
 
         try {
@@ -49,13 +53,23 @@ TcpServer::TcpServer(int port, int threadCount)
             auto stmt = parser.parseStatement();
             LOG_INFO("TcpServer", "Step 4: Statement parsed, type: " + std::to_string(static_cast<int>(stmt->getType())));
 
-            // 执行 SQL
+            // 执行 SQL（使用会话的数据库）
             LOG_INFO("TcpServer", "Step 5: Getting Executor instance...");
             auto& executor = executor::Executor::getInstance();
             LOG_INFO("TcpServer", "Step 6: Executor instance obtained, executing statement...");
+            LOG_INFO("TcpServer", "Step 6b: Using database from session: [" + currentDb + "]");
 
-            auto execResult = executor.execute(stmt.get());
+            auto execResult = executor.execute(stmt.get(), currentDb);
             LOG_INFO("TcpServer", "Step 7: Statement executed, checking result...");
+
+            // 如果是 USE 语句，更新会话的数据库
+            if (execResult.isSuccess() && stmt->getType() == parser::ASTNodeType::USE_STMT) {
+                auto useStmt = dynamic_cast<parser::UseStmt*>(stmt.get());
+                if (useStmt) {
+                    session.setCurrentDatabase(useStmt->database);
+                    LOG_INFO("TcpServer", "Session database updated to: " + useStmt->database);
+                }
+            }
 
             if (!execResult.isSuccess()) {
                 LOG_INFO("TcpServer", "Step 8a: Execution failed");
@@ -68,8 +82,8 @@ TcpServer::TcpServer(int port, int threadCount)
                 response.message = "Query OK";
 
                 // 获取列名和数据
-                LOG_INFO("TcpServer", "Step 9: Releasing result...");
-                auto* result = execResult.release();
+                LOG_INFO("TcpServer", "Step 9: Getting result...");
+                auto* result = execResult.getValue();
                 if (result) {
                     LOG_INFO("TcpServer", "Step 10: Result obtained, row count: " + std::to_string(result->getRowCount()));
                     response.rowCount = result->getRowCount();
@@ -149,7 +163,24 @@ void TcpServer::start() {
 
 void TcpServer::stop() {
     reactor_->stop();
+
+    // 清理所有会话
+    {
+        std::lock_guard<std::mutex> lock(sessionsMutex_);
+        sessions_.clear();
+    }
+
     LOG_INFO("TcpServer", "Server stopped");
+}
+
+server::Session& TcpServer::getOrCreateSession(int fd) {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    return sessions_[fd];  // 自动创建或返回已有Session
+}
+
+void TcpServer::removeSession(int fd) {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    sessions_.erase(fd);
 }
 
 }  // namespace minisql

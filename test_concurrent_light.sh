@@ -27,15 +27,13 @@ if ! nc -z $HOST $PORT 2>/dev/null; then
 fi
 
 # 设置测试环境
-echo "1. ���置测试环境..."
-echo "CREATE DATABASE concurrent_test;" | nc -q 1 $HOST $PORT > /dev/null 2>&1
-echo "USE concurrent_test;" | nc -q 1 $HOST $PORT > /dev/null 2>&1
-echo "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(50), balance FLOAT);" | nc -q 1 $HOST $PORT > /dev/null 2>&1
+echo "1. 设置测试环境..."
+(echo "CREATE DATABASE concurrent_test;"; echo "USE concurrent_test;"; echo "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(50), balance FLOAT);") | nc -w 3 $HOST $PORT > /dev/null 2>&1
 
 # 初始化数据
 echo "2. 初始化测试数据..."
 for i in $(seq 1 20); do
-    echo "INSERT INTO users VALUES($i, 'User$i', 1000.00);" | nc -q 1 $HOST $PORT > /dev/null 2>&1
+    echo "INSERT INTO users VALUES($i, 'User$i', 1000.00);" | nc -w 3 $HOST $PORT > /dev/null 2>&1
 done
 echo -e "${GREEN}✓ 初始化完成${NC}"
 echo ""

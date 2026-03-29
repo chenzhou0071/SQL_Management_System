@@ -3,6 +3,8 @@
 #include <string>
 #include <exception>
 #include <vector>
+#include <memory>
+#include <utility>
 
 namespace minisql {
 
@@ -135,25 +137,29 @@ public:
     Result& operator=(const Result&) = delete;
 
     // 移动构造
-    Result(Result&& other) noexcept : success_(other.success_), value_(other.value_), error_(std::move(other.error_)) {
-        other.value_ = nullptr;
+    Result(Result&& other) noexcept
+        : success_(other.success_),
+          value_(other.value_.release()),
+          error_(std::move(other.error_)) {
     }
 
-    ~Result() { delete value_; }
+    ~Result() {
+        // value_ 是 unique_ptr,会自动删除
+    }
 
     bool isSuccess() const { return success_; }
     bool isError() const { return !success_; }
-    T* getValue() const { return value_; }
-    T* release() { T* v = value_; value_ = nullptr; return v; }
+    T* getValue() const { return value_.get(); }
+    T* release() { return value_.release(); }
     const MiniSQLException& getError() const { return error_; }
 
-    T* operator->() const { return value_; }
+    T* operator->() const { return value_.get(); }
     T& operator*() const { return *value_; }
     explicit operator bool() const { return success_; }
 
 private:
     bool success_;
-    T* value_;
+    std::unique_ptr<T> value_;
     MiniSQLException error_;
 };
 

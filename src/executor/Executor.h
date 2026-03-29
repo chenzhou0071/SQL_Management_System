@@ -15,8 +15,11 @@ public:
     // 获取单例实例
     static Executor& getInstance();
 
-    // 执行 SQL 语句
+    // 执行 SQL 语句（使用单例的当前数据库）
     Result<ExecutionResult> execute(parser::ASTNode* stmt);
+
+    // 执行 SQL 语句（使用指定的数据库名称）
+    Result<ExecutionResult> execute(parser::ASTNode* stmt, const std::string& dbName);
 
     // 获取当前数据库
     std::string getCurrentDatabase() const { return currentDatabase_; }
@@ -35,6 +38,9 @@ private:
 
     // 执行 SELECT（使用算子树）
     Result<ExecutionResult> executeSelect(parser::SelectStmt* stmt);
+
+    // 执行 SELECT（使用指定的数据库名称）
+    Result<ExecutionResult> executeSelect(parser::SelectStmt* stmt, const std::string& dbName);
 
     std::string currentDatabase_;
 };

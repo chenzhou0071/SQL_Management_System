@@ -62,6 +62,7 @@ Result<ExecutionResult> DMLExecutor::executeInsert(const std::string& dbName, pa
     // 插入每一行
     int insertedCount = 0;
     ExpressionEvaluator evaluator;
+    evaluator.setCurrentDatabase(dbName);  // 设置数据库上下文
 
     for (const auto& valuesExpr : stmt->valuesList) {
         auto rowResult = evaluateRowValues(valuesExpr, evaluator, columnNames, columnTypes);
@@ -119,6 +120,7 @@ Result<ExecutionResult> DMLExecutor::executeUpdate(const std::string& dbName, pa
 
     int updatedCount = 0;
     ExpressionEvaluator evaluator;
+    evaluator.setCurrentDatabase(dbName);  // 设置数据库上下文
 
     // 遍历每一行
     for (auto& rowPair : tableData) {
@@ -221,6 +223,7 @@ Result<ExecutionResult> DMLExecutor::executeDelete(const std::string& dbName, pa
 
     int deletedCount = 0;
     ExpressionEvaluator evaluator;
+    evaluator.setCurrentDatabase(dbName);  // 设置数据库上下文
     std::vector<int> rowIdsToDelete;
 
     // 遍历每一行

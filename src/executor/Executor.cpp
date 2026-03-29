@@ -189,7 +189,136 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt) {
     }
 }
 
+Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt, const std::string& dbName) {
+    if (!stmt) {
+        MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "NULL statement");
+        return Result<ExecutionResult>(error);
+    }
+
+    try {
+        parser::ASTNodeType nodeType = stmt->getType();
+
+        switch (nodeType) {
+            case parser::ASTNodeType::INSERT_STMT: {
+                auto insertStmt = dynamic_cast<parser::InsertStmt*>(stmt);
+                return DMLExecutor::executeInsert(dbName, insertStmt);
+            }
+
+            case parser::ASTNodeType::UPDATE_STMT: {
+                auto updateStmt = dynamic_cast<parser::UpdateStmt*>(stmt);
+                return DMLExecutor::executeUpdate(dbName, updateStmt);
+            }
+
+            case parser::ASTNodeType::DELETE_STMT: {
+                auto deleteStmt = dynamic_cast<parser::DeleteStmt*>(stmt);
+                return DMLExecutor::executeDelete(dbName, deleteStmt);
+            }
+
+            case parser::ASTNodeType::SELECT_STMT: {
+                return executeSelect(static_cast<parser::SelectStmt*>(stmt), dbName);
+            }
+
+            case parser::ASTNodeType::EXPLAIN_STMT: {
+                auto explainStmt = dynamic_cast<parser::ExplainStmt*>(stmt);
+                auto selectStmt = std::dynamic_pointer_cast<parser::SelectStmt>(explainStmt->innerStatement);
+                if (!selectStmt) {
+                    return Result<ExecutionResult>(
+                        MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "EXPLAIN requires a SELECT statement"));
+                }
+
+                // 生成 EXPLAIN 输出
+                auto explainResult = optimizer::ExplainHandler::explain(dbName, selectStmt.get());
+                if (explainResult.isError()) {
+                    return Result<ExecutionResult>(explainResult.getError());
+                }
+
+                ExecutionResult result;
+                result.rows.push_back({});
+
+                // 根据格式输出
+                if (explainStmt->formatJSON) {
+                    result.rows[0].push_back(
+                        Value(optimizer::ExplainHandler::formatJSON(*explainResult.getValue())));
+                } else {
+                    result.rows[0].push_back(
+                        Value(optimizer::ExplainHandler::formatTable(*explainResult.getValue())));
+                }
+                return Result<ExecutionResult>(result);
+            }
+
+            case parser::ASTNodeType::ANALYZE_STMT: {
+                auto analyzeStmt = dynamic_cast<parser::AnalyzeStmt*>(stmt);
+
+                // 调用统计信息收集
+                auto analyzeResult = optimizer::Statistics::getInstance().analyzeTable(
+                    dbName, analyzeStmt->tableName);
+
+                ExecutionResult result;
+                if (analyzeResult.isError()) {
+                    return Result<ExecutionResult>(analyzeResult.getError());
+                }
+
+                // 返回成功信息
+                result.rows.push_back({
+                    Value("Table"),
+                    Value("Op"),
+                    Value("Msg_type"),
+                    Value("Msg_text")
+                });
+                result.rows.push_back({
+                    Value(analyzeStmt->tableName),
+                    Value("analyze"),
+                    Value("status"),
+                    Value("OK")
+                });
+                return Result<ExecutionResult>(result);
+            }
+
+            case parser::ASTNodeType::CREATE_DATABASE_STMT: {
+                auto createDBStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt);
+                return DDLExecutor::executeCreateDatabase(createDBStmt);
+            }
+
+            case parser::ASTNodeType::CREATE_INDEX_STMT: {
+                auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt);
+                return DDLExecutor::executeCreateIndex(dbName, createIdxStmt);
+            }
+
+            case parser::ASTNodeType::CREATE_STMT: {
+                auto createTableStmt = dynamic_cast<parser::CreateTableStmt*>(stmt);
+                return DDLExecutor::executeCreateTable(dbName, createTableStmt);
+            }
+
+            case parser::ASTNodeType::DROP_STMT: {
+                auto dropStmt = dynamic_cast<parser::DropStmt*>(stmt);
+                return DDLExecutor::executeDrop(dbName, dropStmt);
+            }
+
+            case parser::ASTNodeType::ALTER_STMT: {
+                auto alterStmt = dynamic_cast<parser::AlterTableStmt*>(stmt);
+                return DDLExecutor::executeAlterTable(dbName, alterStmt);
+            }
+
+            case parser::ASTNodeType::USE_STMT: {
+                auto useStmt = dynamic_cast<parser::UseStmt*>(stmt);
+                return DDLExecutor::executeUseDatabase(useStmt);
+            }
+
+            default:
+                return Result<ExecutionResult>(
+                    MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unsupported statement type"));
+        }
+    } catch (const std::exception& e) {
+        return Result<ExecutionResult>(
+            MiniSQLException(ErrorCode::EXEC_ERROR_BASE, std::string("Execution error: ") + e.what()));
+    }
+}
+
 Result<ExecutionResult> Executor::executeSelect(parser::SelectStmt* stmt) {
+    return executeSelect(stmt, currentDatabase_);
+}
+
+Result<ExecutionResult> Executor::executeSelect(parser::SelectStmt* stmt, const std::string& dbName) {
     if (!stmt) {
         MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "NULL SELECT statement");
         return Result<ExecutionResult>(error);
@@ -198,7 +327,7 @@ Result<ExecutionResult> Executor::executeSelect(parser::SelectStmt* stmt) {
     // ========== 使用 QueryOptimizer 进行完整优化流程 ==========
     LOG_INFO("Executor", "Starting optimized query execution");
 
-    auto optimizeResult = optimizer::QueryOptimizer::optimize(currentDatabase_, stmt);
+    auto optimizeResult = optimizer::QueryOptimizer::optimize(dbName, stmt);
     if (optimizeResult.isError()) {
         return Result<ExecutionResult>(optimizeResult.getError());
     }

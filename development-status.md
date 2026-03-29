@@ -805,6 +805,109 @@ build_server/
 
 ---
 
+### ✅ Phase 9: 服务器并发修复
+
+**实现时间**: 2026-03-29
+
+**核心问题**: 并发测试时服务器崩溃 (segmentation fault)
+
+**问题分析**:
+1. **Executor 单例共享状态问题**: `Executor::currentDatabase_` 是单例成员,多个并发连接互相覆盖
+2. **Result<T> 内存双重释放**: `TcpServer` 使用 `execResult.release()` 后未正确管理生命周期
+3. **ExpressionEvaluator 缺少数据库上下文**: INSERT/UPDATE/DELETE 执行时无法访问子查询
+
+**修复方案**:
+
+#### 9.1 Session 级别数据库隔离
+- ✅ **新增 `Session.h`**: 每个 TCP 连接独立的会话状态
+  ```cpp
+  class Session {
+      std::string currentDatabase_;  // 每个连接独立的当前数据库
+  };
+  ```
+- ✅ **TcpServer 会话管理**: `std::unordered_map<int, Session>` 按 fd 管理会话
+- ✅ **修改 Executor 接口**: 新增 `execute(stmt, dbName)` 重载方法
+  ```cpp
+  Result<ExecutionResult> execute(parser::ASTNode* stmt, const std::string& dbName);
+  ```
+- ✅ **TcpServer 传递会话数据库**: 使用 session 的 `currentDatabase` 而非单例
+
+#### 9.2 Result<T> 内存管理修复
+- ✅ **使用 `unique_ptr` 替代裸指针**:
+  ```cpp
+  std::unique_ptr<T> value_;  // 自动管理内存,防止双重释放
+  ```
+- ✅ **移动构造正确转移所有权**: `value_(other.value_.release())`
+- ✅ **TcpServer 使用 `getValue()` 替代 `release()`**: 避免手动 delete
+
+#### 9.3 ExpressionEvaluator 数据库上下文
+- ✅ **INSERT 执行器设置数据库**: `evaluator.setCurrentDatabase(dbName)`
+- ✅ **UPDATE 执行器设置数据库**: 同上
+- ✅ **DELETE 执行器设置数据库**: 同上
+
+#### 9.4 执行器优化
+- ✅ **新增 `executeSelect(stmt, dbName)` 重载**: 直接使用传入的数据库名
+- ✅ **移除 `execute(stmt, dbName)` 中的临时修改**: 不再 save/restore `currentDatabase_`
+- ✅ **所有 DML/DDL 直接使用 `dbName` 参数**: 完全线程安全
+
+**测试结果**:
+- ✅ 并发读测试通过 (10 客户端 × 20 操作)
+- ✅ 并发写测试通过
+- ✅ 吞吐量: ~900 ops/sec
+- ✅ 无崩溃/段错误
+
+**测试命令**:
+```bash
+# 编译
+cd build_linux && make -j4
+
+# 启动服务器
+./minisql_server
+
+# 运行并发测试
+cd /mnt/hgfs/share/SQL\ Management\ System
+bash test_concurrent_light.sh
+```
+
+**并发测试结果示例**:
+```
+并发客户端数: 10
+每客户端操作数: 20
+
+测试1: 并发读测试
+✓ 并发读测试完成
+总操作数: 200
+总耗时: 0.22s
+吞吐量: 903.74 ops/sec
+
+测试2: 并发写测试
+✓ 并发写测试完成
+总操作数: 200
+总耗时: 0.21s
+吞吐量: 933.96 ops/sec
+```
+
+**修改文件清单**:
+```
+src/common/
+└── Error.h                 # Result<T> 改用 unique_ptr
+
+src/executor/
+├── Executor.h              # 新增 execute(stmt, dbName) 声明
+├── Executor.cpp            # 实现 executeSelect(stmt, dbName)
+└── DMLExecutor.cpp        # 设置 ExpressionEvaluator 数据库上下文
+
+src/server/network/
+├── Session.h              # 新增: 会话状态管理
+├── TcpServer.h            # 新增: 会话管理
+└── TcpServer.cpp          # 使用 Session 数据库
+
+tests/
+└── test_concurrent_light.sh  # 并发测试脚本
+```
+
+---
+
 ## 未实现功能
 
 | 模块 | 功能 | 预估工作量 |
