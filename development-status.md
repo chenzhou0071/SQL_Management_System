@@ -627,6 +627,184 @@ tests/
 
 ---
 
+### ✅ Phase 8: Linux 服务器实现
+
+**实现时间**: 2026-03-29
+
+**核心功能**:
+
+#### 8.1 服务器架构设计
+- ✅ **Single Reactor + Thread Pool 模型**
+  - 主 Reactor 线程池（2个线程）处理 I/O 事件
+  - 工作线程池（4个线程）处理 SQL 执行
+  - epoll 事件驱动，非阻塞 I/O
+  - 支持多客户端并发连接
+
+#### 8.2 并发控制层 (`src/server/concurrency/`)
+- ✅ **RWLock** (`RWLock.h/cpp`)
+  - RAII 封装的读写锁
+  - `ReadGuard` / `WriteGuard` 自动锁管理
+  - 基于 `std::shared_mutex`
+- ✅ **LockManager** (`LockManager.h/cpp`)
+  - 单例模式锁管理器
+  - 表级读写锁：`acquireTableLock()`
+  - 索引级读写锁：`acquireIndexLock()`
+  - 文件级读写锁：`acquireFileLock()`
+  - 自动锁释放
+
+#### 8.3 事务管理层 (`src/server/transaction/`)
+- ✅ **Transaction** (`Transaction.h/cpp`)
+  - 事务状态管理（ACTIVE, COMMITTED, ABORTED）
+  - 操作记录追踪（INSERT/UPDATE/DELETE）
+  - 事务 ID 生成
+- ✅ **WALManager** (`WALManager.h/cpp`)
+  - Write-Ahead Logging 预写日志
+  - 日志序列化（`data/wal/wal.log`）
+  - 崩溃恢复机制
+  - fsync 保证持久化
+- ✅ **TransactionManager** (`TransactionManager.h/cpp`)
+  - 事务生命周期管理
+  - BEGIN/COMMIT/ROLLBACK 支持
+  - `thread_local` 事务隔离
+  - 自动事务创建
+
+#### 8.4 网络层 (`src/server/network/`)
+- ✅ **SqlProtocol** (`SqlProtocol.h/cpp`)
+  - SQL 请求解析（`SqlRequest`）
+  - SQL 响应构建（`SqlResponse`）
+  - 文本协议格式（类似 MySQL）
+- ✅ **TcpConnection** (`TcpConnection.h/cpp`)
+  - 连接缓冲区管理
+  - 按行读取（`\n` 分隔）
+  - 非阻塞发送
+- ✅ **ThreadPool** (`ThreadPool.h/cpp`)
+  - 可配置线程数
+  - 任务队列（`std::function`）
+  - 优雅停止
+- ✅ **Reactor** (`Reactor.h/cpp`)
+  - epoll 事件循环
+  - 监听 socket 管理
+  - 客户端连接处理
+  - 读事件分发
+- ✅ **TcpServer** (`TcpServer.h/cpp`)
+  - SQL 执行器集成（`Executor::getInstance()`）
+  - SQL 解析 → 执行 → 结果封装
+  - 错误处理（`MiniSQLException` 捕获）
+  - 信号处理（SIGINT/SIGTERM）
+
+#### 8.5 存储层集成
+- ✅ **FileIO 加锁**：`FileIO::writeToFile/readFromFile/appendToFile` 使用 `LockManager`
+- ✅ **BPlusTree 加锁**：`BPlusTree::insert/search/remove` 使用 `LockManager`
+- ✅ 表级锁保证并发安全
+
+#### 8.6 构建系统
+- ✅ **CMake 条件编译**
+  - `BUILD_SERVER=ON` 启用服务器模式
+  - 服务器模式不链接 Qt
+  - `build_server/` 输出目录
+  - `pthread` 链接
+- ✅ **循环依赖解决**
+  - executor ↔ optimizer 循环依赖
+  - 使用 `-Wl,--start-group` / `--end-group` 链接器组
+- ✅ **模块依赖修正**
+  - `storage` 在服务器模式链接 `server_concurrency`
+  - `executor` 添加 `SubqueryScanOperator.cpp` / `NestedLoopJoinOperator.cpp`
+
+#### 8.7 内存管理修复
+- ✅ **Result<T> 双释放修复**
+  - 添加 `release()` 方法转移所有权
+  - `TcpServer` 使用 `execResult.release()` 避免 `~Result()` 删除后悬空指针
+
+#### 8.8 测试覆盖
+- ✅ **test_concurrency**: 5/5 通过（RWLock, LockManager）
+- ✅ **test_transaction**: 全部通过（Transaction, WALManager, TransactionManager）
+- ✅ **test_network**: 2/2 通过（TcpConnection, ThreadPool, Reactor）
+
+#### 8.9 服务器测试
+**测试命令**:
+```bash
+# 编译服务器
+cd build_server
+cmake -DBUILD_SERVER=ON ..
+make minisql_server -j8
+
+# 启动服务器
+./bin/minisql_server &
+
+# 测试 SQL（使用 nc 一次性发送完整语句）
+echo "CREATE TABLE users(id INT PRIMARY KEY, name VARCHAR(50));" | nc localhost 3306
+echo "INSERT INTO users VALUES(1, 'Alice');" | nc localhost 3306
+echo "SELECT * FROM users;" | nc localhost 3306
+echo "UPDATE users SET name = 'Charlie' WHERE id = 1;" | nc localhost 3306
+echo "DELETE FROM users WHERE id = 1;" | nc localhost 3306
+echo "DROP TABLE users;" | nc localhost 3306
+```
+
+**测试结果**:
+- ✅ CREATE TABLE 成功
+- ✅ INSERT 成功
+- ✅ SELECT 成功（返回正确结果）
+- ✅ UPDATE 成功
+- ✅ DELETE 成功
+- ✅ DROP TABLE 成功
+- ✅ 错误处理正常（查询不存在的表返回错误）
+- ✅ 多客户端并发连接正常
+
+**协议格式**:
+```
+请求: <SQL>;\n
+响应成功:
+  OK\n
+  <message>\n
+  <row_count>\n
+  <col1>,<col2>,...\n
+  <row1_col1>,<row1_col2>,...\n
+  ...
+
+响应错误:
+  ERROR\n
+  <error_message>\n
+```
+
+#### 8.10 新增文件清单
+```
+src/server/
+├── concurrency/
+│   ├── RWLock.h/cpp              # 读写锁封装
+│   └── LockManager.h/cpp         # 锁管理器
+├── transaction/
+│   ├── Transaction.h/cpp         # 事务类
+│   ├── TransactionManager.h/cpp  # 事务管理器
+│   └── WALManager.h/cpp          # WAL 日志管理器
+├── network/
+│   ├── SqlProtocol.h/cpp         # SQL 协议
+│   ├── TcpConnection.h/cpp       # TCP 连接
+│   ├── ThreadPool.h/cpp          # 线程池
+│   ├── Reactor.h/cpp             # Reactor 事件循环
+│   └── TcpServer.h/cpp           # TCP 服务器
+└── main_server.cpp               # 服务器入口
+
+tests/server/
+├── test_concurrency.cpp          # 并发控制测试
+├── test_transaction.cpp          # 事务测试
+└── test_network.cpp              # 网络层测试
+
+build_server/
+└── bin/
+    ├── minisql_server            # 服务器可执行文件
+    ├── data/wal/                 # WAL 日志目录
+    └── data/                     # 数据目录
+```
+
+#### 8.11 CMake 修改
+- ✅ 根 `CMakeLists.txt`: 添加 `BUILD_SERVER` 选项和链接器组
+- ✅ `src/storage/CMakeLists.txt`: 服务器模式链接 `server_concurrency`
+- ✅ `src/executor/CMakeLists.txt`: 添加缺失的 .cpp 文件
+- ✅ `src/optimizer/CMakeLists.txt`: 修复循环依赖
+- ✅ `.gitignore`: 忽略 `build_server/` 和 `build_linux/`
+
+---
+
 ## 未实现功能
 
 | 模块 | 功能 | 预估工作量 |
@@ -980,7 +1158,9 @@ data/demo_db/
 - **1393cfa**: feat(storage): 实现 B+ 树索引持久化
 - **00b9b88**: feat(parser): 实现 ALTER TABLE 和函数调用表达式
 - **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
-- **(本次)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
+- **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
+- **(Phase 7)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
+- **(Phase 8)**: feat(Phase 8): Linux 服务器实现 - Reactor + Thread Pool + 事务管理 + WAL + 并发控制 + SQL 执行器集成
 
 ---
 
@@ -991,4 +1171,3 @@ data/demo_db/
 
 ---
 
-*最后更新: 2026-03-28 (Phase 7 完成，29/29 测试通过)*

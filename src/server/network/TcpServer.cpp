@@ -49,7 +49,7 @@ TcpServer::TcpServer(int port, int threadCount)
                 response.message = "Query OK";
 
                 // 获取列名和数据
-                auto* result = execResult.getValue();
+                auto* result = execResult.release();
                 if (result) {
                     response.rowCount = result->getRowCount();
                     response.columns = result->columnNames;

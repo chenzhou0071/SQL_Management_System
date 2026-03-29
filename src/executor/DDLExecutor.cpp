@@ -25,20 +25,25 @@ ColumnDef DDLExecutor::convertColumnDef(const parser::ColumnDefNode& node) {
     return col;
 }
 
-Result<ExecutionResult> DDLExecutor::executeCreateDatabase(const std::string& dbName) {
-    if (dbName.empty()) {
+Result<ExecutionResult> DDLExecutor::executeCreateDatabase(parser::CreateDatabaseStmt* stmt) {
+    if (!stmt) {
+        MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "NULL CREATE DATABASE statement");
+        return Result<ExecutionResult>(error);
+    }
+
+    if (stmt->database.empty()) {
         MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "Database name cannot be empty");
         return Result<ExecutionResult>(error);
     }
 
     auto& tableMgr = storage::TableManager::getInstance();
-    auto result = tableMgr.createDatabase(dbName);
+    auto result = tableMgr.createDatabase(stmt->database);
 
     ExecutionResult execResult;
     if (result.isSuccess()) {
         setResultMetadata(execResult, {"status"}, {DataType::VARCHAR});
         execResult.rows.push_back({Value("Database created successfully")});
-        LOG_INFO("DDLExecutor", "Created database: " + dbName);
+        LOG_INFO("DDLExecutor", "Created database: " + stmt->database);
         return Result<ExecutionResult>(execResult);
     } else {
         return Result<ExecutionResult>(result.getError());
@@ -114,6 +119,17 @@ Result<ExecutionResult> DDLExecutor::executeDrop(const std::string& dbName, pars
             setResultMetadata(execResult, {"status"}, {DataType::VARCHAR});
             execResult.rows.push_back({Value("Database dropped successfully")});
             LOG_INFO("DDLExecutor", "Dropped database: " + stmt->name);
+            return Result<ExecutionResult>(execResult);
+        } else {
+            return Result<ExecutionResult>(result.getError());
+        }
+    } else if (objectTypeUpper == "INDEX") {
+        auto& indexMgr = storage::IndexManager::getInstance();
+        auto result = indexMgr.dropIndex(dbName, stmt->name);
+        if (result.isSuccess()) {
+            setResultMetadata(execResult, {"status"}, {DataType::VARCHAR});
+            execResult.rows.push_back({Value("Index dropped successfully")});
+            LOG_INFO("DDLExecutor", "Dropped index: " + stmt->name);
             return Result<ExecutionResult>(execResult);
         } else {
             return Result<ExecutionResult>(result.getError());
@@ -212,6 +228,31 @@ Result<ExecutionResult> DDLExecutor::executeUseDatabase(parser::UseStmt* stmt) {
     execResult.rows.push_back({Value(stmt->database)});
     LOG_INFO("DDLExecutor", "Using database: " + stmt->database);
     return Result<ExecutionResult>(execResult);
+}
+
+Result<ExecutionResult> DDLExecutor::executeCreateIndex(const std::string& dbName, parser::CreateIndexStmt* stmt) {
+    if (!stmt) {
+        MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "NULL CREATE INDEX statement");
+        return Result<ExecutionResult>(error);
+    }
+
+    if (stmt->indexName.empty() || stmt->tableName.empty() || stmt->columnNames.empty()) {
+        MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "Index name, table name, and column names are required");
+        return Result<ExecutionResult>(error);
+    }
+
+    auto& indexMgr = storage::IndexManager::getInstance();
+    auto result = indexMgr.createIndex(dbName, stmt->tableName, stmt->indexName, stmt->columnNames, stmt->unique);
+
+    ExecutionResult execResult;
+    if (result.isSuccess()) {
+        setResultMetadata(execResult, {"status"}, {DataType::VARCHAR});
+        execResult.rows.push_back({Value("Index created successfully")});
+        LOG_INFO("DDLExecutor", "Created index: " + stmt->indexName + " on " + stmt->tableName);
+        return Result<ExecutionResult>(execResult);
+    } else {
+        return Result<ExecutionResult>(result.getError());
+    }
 }
 
 } // namespace executor

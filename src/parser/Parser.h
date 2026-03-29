@@ -35,7 +35,7 @@ private:
     std::shared_ptr<InsertStmt> parseInsertStatement();
     std::shared_ptr<UpdateStmt> parseUpdateStatement();
     std::shared_ptr<DeleteStmt> parseDeleteStatement();
-    std::shared_ptr<CreateTableStmt> parseCreateStatement();
+    std::shared_ptr<ASTNode> parseCreateStatement();
     std::shared_ptr<DropStmt> parseDropStatement();
     std::shared_ptr<AlterTableStmt> parseAlterStatement();
 

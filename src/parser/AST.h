@@ -444,6 +444,39 @@ public:
 };
 
 // ============================================================
+// CREATE DATABASE 语句
+// ============================================================
+class CreateDatabaseStmt : public ASTNode {
+public:
+    CreateDatabaseStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false) {}
+
+    std::string database;
+    bool ifNotExists;
+
+    std::string toString() const override {
+        return "CREATE DATABASE " + database;
+    }
+};
+
+// ============================================================
+// CREATE INDEX 语句
+// ============================================================
+class CreateIndexStmt : public ASTNode {
+public:
+    CreateIndexStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false), unique(false) {}
+
+    std::string indexName;
+    std::string tableName;
+    std::vector<std::string> columnNames;  // 索引列（支持复合索引）
+    bool unique;
+    bool ifNotExists;
+
+    std::string toString() const override {
+        return "CREATE " + (unique ? std::string("UNIQUE ") : "") + "INDEX " + indexName + " ON " + tableName;
+    }
+};
+
+// ============================================================
 // DROP 语句
 // ============================================================
 class DropStmt : public ASTNode {

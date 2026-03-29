@@ -13,10 +13,13 @@ namespace executor {
 class DDLExecutor {
 public:
     // 执行 CREATE DATABASE 语句
-    static Result<ExecutionResult> executeCreateDatabase(const std::string& dbName);
+    static Result<ExecutionResult> executeCreateDatabase(parser::CreateDatabaseStmt* stmt);
 
     // 执行 CREATE TABLE 语句
     static Result<ExecutionResult> executeCreateTable(const std::string& dbName, parser::CreateTableStmt* stmt);
+
+    // 执行 CREATE INDEX 语句
+    static Result<ExecutionResult> executeCreateIndex(const std::string& dbName, parser::CreateIndexStmt* stmt);
 
     // 执行 DROP 语句 (TABLE, DATABASE, INDEX, VIEW)
     static Result<ExecutionResult> executeDrop(const std::string& dbName, parser::DropStmt* stmt);

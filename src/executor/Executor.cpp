@@ -145,8 +145,17 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt) {
             }
 
             case parser::ASTNodeType::CREATE_STMT: {
-                auto createStmt = dynamic_cast<parser::CreateTableStmt*>(stmt);
-                return DDLExecutor::executeCreateTable(currentDatabase_, createStmt);
+                // 尝试转换为不同类型的 CREATE 语句
+                if (auto createDBStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt)) {
+                    return DDLExecutor::executeCreateDatabase(createDBStmt);
+                } else if (auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt)) {
+                    return DDLExecutor::executeCreateIndex(currentDatabase_, createIdxStmt);
+                } else if (auto createTableStmt = dynamic_cast<parser::CreateTableStmt*>(stmt)) {
+                    return DDLExecutor::executeCreateTable(currentDatabase_, createTableStmt);
+                } else {
+                    return Result<ExecutionResult>(
+                        MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unknown CREATE statement type"));
+                }
             }
 
             case parser::ASTNodeType::DROP_STMT: {

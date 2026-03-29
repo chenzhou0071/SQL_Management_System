@@ -144,6 +144,7 @@ public:
     bool isSuccess() const { return success_; }
     bool isError() const { return !success_; }
     T* getValue() const { return value_; }
+    T* release() { T* v = value_; value_ = nullptr; return v; }
     const MiniSQLException& getError() const { return error_; }
 
     T* operator->() const { return value_; }

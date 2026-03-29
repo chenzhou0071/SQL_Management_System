@@ -465,29 +465,92 @@ std::shared_ptr<DeleteStmt> Parser::parseDeleteStatement() {
     return stmt;
 }
 
-std::shared_ptr<CreateTableStmt> Parser::parseCreateStatement() {
-    auto stmt = std::make_shared<CreateTableStmt>();
-
+std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
     expectKeyword("CREATE", "Expected CREATE");
 
     // 检查是否有 IF NOT EXISTS
+    bool ifNotExists = false;
     if (checkKeyword("IF")) {
         advance();
         if (checkKeyword("NOT")) {
             advance();
             if (checkKeyword("EXISTS")) {
-                stmt->ifNotExists = true;
+                ifNotExists = true;
                 advance();
             }
         }
     }
 
     // 对象类型
-    if (checkKeyword("TABLE")) {
+    if (checkKeyword("DATABASE")) {
         advance();
-    } else {
-        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected TABLE after CREATE");
-    }
+        auto stmt = std::make_shared<CreateDatabaseStmt>();
+        stmt->ifNotExists = ifNotExists;
+
+        if (!check(TokenType::IDENTIFIER)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected database name after CREATE DATABASE");
+        }
+        stmt->database = current_.value;
+        advance();
+
+        match(TokenType::SEMICOLON);
+        return stmt;
+
+    } else if (checkKeyword("INDEX")) {
+        advance();
+        auto stmt = std::make_shared<CreateIndexStmt>();
+        stmt->ifNotExists = ifNotExists;
+
+        // 检查是否是 UNIQUE INDEX
+        if (!ifNotExists && checkKeyword("UNIQUE")) {
+            stmt->unique = true;
+            advance();
+        }
+
+        // 索引名
+        if (!check(TokenType::IDENTIFIER)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected index name after CREATE INDEX");
+        }
+        stmt->indexName = current_.value;
+        advance();
+
+        expectKeyword("ON", "Expected ON after index name");
+
+        // 表名
+        if (!check(TokenType::IDENTIFIER)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected table name after ON");
+        }
+        stmt->tableName = current_.value;
+        advance();
+
+        // 列名列表
+        if (!match(TokenType::LEFT_PAREN)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected ( after table name");
+        }
+
+        while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+            if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
+                stmt->columnNames.push_back(current_.value);
+                advance();
+                if (!match(TokenType::COMMA)) {
+                    break;
+                }
+            } else {
+                advance();
+            }
+        }
+
+        if (!match(TokenType::RIGHT_PAREN)) {
+            throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected ) after column list");
+        }
+
+        match(TokenType::SEMICOLON);
+        return stmt;
+
+    } else if (checkKeyword("TABLE")) {
+        advance();
+        auto stmt = std::make_shared<CreateTableStmt>();
+        stmt->ifNotExists = ifNotExists;
 
     // 表名
     if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
@@ -948,8 +1011,11 @@ std::shared_ptr<DropStmt> Parser::parseDropStatement() {
     } else if (checkKeyword("DATABASE")) {
         stmt->objectType = "DATABASE";
         advance();
+    } else if (checkKeyword("INDEX")) {
+        stmt->objectType = "INDEX";
+        advance();
     } else {
-        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected TABLE or DATABASE after DROP");
+        throw MiniSQLException(ErrorCode::PARSER_SYNTAX_ERROR, "Expected TABLE, DATABASE or INDEX after DROP");
     }
 
     // 对象名
