@@ -463,7 +463,7 @@ public:
 // ============================================================
 class CreateIndexStmt : public ASTNode {
 public:
-    CreateIndexStmt() : ASTNode(ASTNodeType::CREATE_STMT), ifNotExists(false), unique(false) {}
+    CreateIndexStmt() : ASTNode(ASTNodeType::CREATE_STMT), unique(false), ifNotExists(false) {}
 
     std::string indexName;
     std::string tableName;

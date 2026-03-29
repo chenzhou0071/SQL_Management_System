@@ -115,6 +115,58 @@ TEST(testParserParseCreateTable) {
     ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_STMT));
 }
 
+TEST(testParserParseCreateDatabase) {
+    Lexer lexer("CREATE DATABASE testdb;");
+    Parser parser(lexer);
+    auto stmt = parser.parseStatement();
+    ASSERT_NOT_NULL(stmt.get());
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_STMT));
+
+    auto createDbStmt = dynamic_cast<parser::CreateDatabaseStmt*>(stmt.get());
+    ASSERT_NOT_NULL(createDbStmt);
+    ASSERT_EQ(createDbStmt->database, "testdb");
+}
+
+TEST(testParserParseCreateIndex) {
+    Lexer lexer("CREATE INDEX idx_name ON users(name);");
+    Parser parser(lexer);
+    auto stmt = parser.parseStatement();
+    ASSERT_NOT_NULL(stmt.get());
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::CREATE_STMT));
+
+    auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
+    ASSERT_NOT_NULL(createIdxStmt);
+    ASSERT_EQ(createIdxStmt->indexName, "idx_name");
+    ASSERT_EQ(createIdxStmt->tableName, "users");
+    ASSERT_EQ(createIdxStmt->columnNames.size(), 1);
+    ASSERT_EQ(createIdxStmt->columnNames[0], "name");
+    ASSERT_EQ(createIdxStmt->unique, false);
+}
+
+TEST(testParserParseCreateUniqueIndex) {
+    Lexer lexer("CREATE UNIQUE INDEX idx_email ON users(email);");
+    Parser parser(lexer);
+    auto stmt = parser.parseStatement();
+    ASSERT_NOT_NULL(stmt.get());
+
+    auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
+    ASSERT_NOT_NULL(createIdxStmt);
+    ASSERT_EQ(createIdxStmt->unique, true);
+}
+
+TEST(testParserParseCreateCompositeIndex) {
+    Lexer lexer("CREATE INDEX idx_composite ON users(name, email);");
+    Parser parser(lexer);
+    auto stmt = parser.parseStatement();
+    ASSERT_NOT_NULL(stmt.get());
+
+    auto createIdxStmt = dynamic_cast<parser::CreateIndexStmt*>(stmt.get());
+    ASSERT_NOT_NULL(createIdxStmt);
+    ASSERT_EQ(createIdxStmt->columnNames.size(), 2);
+    ASSERT_EQ(createIdxStmt->columnNames[0], "name");
+    ASSERT_EQ(createIdxStmt->columnNames[1], "email");
+}
+
 TEST(testParserParseDropTable) {
     Lexer lexer("DROP TABLE users;");
     Parser parser(lexer);
@@ -129,6 +181,19 @@ TEST(testParserParseDropDatabase) {
     auto stmt = parser.parseStatement();
     ASSERT_NOT_NULL(stmt.get());
     ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::DROP_STMT));
+}
+
+TEST(testParserParseDropIndex) {
+    Lexer lexer("DROP INDEX idx_name;");
+    Parser parser(lexer);
+    auto stmt = parser.parseStatement();
+    ASSERT_NOT_NULL(stmt.get());
+    ASSERT_EQ(static_cast<int>(stmt->getType()), static_cast<int>(ASTNodeType::DROP_STMT));
+
+    auto dropStmt = dynamic_cast<parser::DropStmt*>(stmt.get());
+    ASSERT_NOT_NULL(dropStmt);
+    ASSERT_EQ(dropStmt->objectType, "INDEX");
+    ASSERT_EQ(dropStmt->name, "idx_name");
 }
 
 TEST(testParserParseSelectWithJoin) {
@@ -360,8 +425,13 @@ int main() {
     testParserParseUpdateStatement();
     testParserParseDeleteStatement();
     testParserParseCreateTable();
+    testParserParseCreateDatabase();
+    testParserParseCreateIndex();
+    testParserParseCreateUniqueIndex();
+    testParserParseCreateCompositeIndex();
     testParserParseDropTable();
     testParserParseDropDatabase();
+    testParserParseDropIndex();
     testParserParseSelectWithJoin();
     testParserParseSelectWithLeftJoin();
     testParserParseComplexSelect();

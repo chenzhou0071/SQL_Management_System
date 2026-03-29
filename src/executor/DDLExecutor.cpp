@@ -1,5 +1,6 @@
 #include "DDLExecutor.h"
 #include "../storage/TableManager.h"
+#include "../storage/IndexManager.h"
 #include "../common/Logger.h"
 #include <algorithm>
 
@@ -242,7 +243,12 @@ Result<ExecutionResult> DDLExecutor::executeCreateIndex(const std::string& dbNam
     }
 
     auto& indexMgr = storage::IndexManager::getInstance();
-    auto result = indexMgr.createIndex(dbName, stmt->tableName, stmt->indexName, stmt->columnNames, stmt->unique);
+
+    // 目前只支持单列索引，使用第一列
+    std::string columnName = stmt->columnNames[0];
+    IndexUsageType type = stmt->unique ? IndexUsageType::UNIQUE : IndexUsageType::NORMAL;
+
+    auto result = indexMgr.createIndex(dbName, stmt->tableName, stmt->indexName, columnName, type);
 
     ExecutionResult execResult;
     if (result.isSuccess()) {

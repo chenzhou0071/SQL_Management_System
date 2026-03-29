@@ -552,17 +552,17 @@ std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
         auto stmt = std::make_shared<CreateTableStmt>();
         stmt->ifNotExists = ifNotExists;
 
-    // 表名
-    if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
-        stmt->table = current_.value;
-        advance();
-    }
+        // 表名
+        if (check(TokenType::IDENTIFIER) || check(TokenType::KEYWORD)) {
+            stmt->table = current_.value;
+            advance();
+        }
 
-    // 列定义和表级约束
-    if (check(TokenType::LEFT_PAREN)) {
-        advance();
+        // 列定义和表级约束
+        if (check(TokenType::LEFT_PAREN)) {
+            advance();
 
-        while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
+            while (!check(TokenType::RIGHT_PAREN) && !check(TokenType::EOF_TOKEN)) {
             // 表级索引约束: INDEX, UNIQUE INDEX, PRIMARY KEY, UNIQUE
             if (checkKeyword("INDEX") || checkKeyword("KEY")) {
                 bool isUnique = false;

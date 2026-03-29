@@ -20,7 +20,11 @@ void testCreateDatabase() {
 
     cleanup();
 
-    auto result = executor::DDLExecutor::executeCreateDatabase(DB_NAME);
+    // 使用新的 AST 节点
+    parser::CreateDatabaseStmt stmt;
+    stmt.database = DB_NAME;
+
+    auto result = executor::DDLExecutor::executeCreateDatabase(&stmt);
     assert(result.isSuccess());
 
     // 验证数据库已创建
@@ -35,7 +39,9 @@ void testCreateTable() {
 
     // 创建数据库
     cleanup();
-    executor::DDLExecutor::executeCreateDatabase(DB_NAME);
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
 
     // 创建表定义
     parser::CreateTableStmt stmt;
@@ -71,7 +77,9 @@ void testDropTable() {
 
     // 准备：创建数据库和表
     cleanup();
-    executor::DDLExecutor::executeCreateDatabase(DB_NAME);
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
 
     parser::CreateTableStmt createStmt;
     createStmt.table = "temp_table";
@@ -103,7 +111,9 @@ void testDropDatabase() {
 
     // 准备：创建数据库
     cleanup();
-    executor::DDLExecutor::executeCreateDatabase(DB_NAME);
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
 
     // 删除数据库
     parser::DropStmt dropStmt;
@@ -125,7 +135,9 @@ void testUseDatabase() {
 
     // 准备：创建数据库
     cleanup();
-    executor::DDLExecutor::executeCreateDatabase(DB_NAME);
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
 
     // 使用数据库
     parser::UseStmt useStmt;
@@ -141,6 +153,70 @@ void testUseDatabase() {
     std::cout << "testUseDatabase: PASSED" << std::endl;
 }
 
+void testCreateIndex() {
+    std::cout << "Running testCreateIndex..." << std::endl;
+
+    // 准备：创建数据库和表
+    cleanup();
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
+
+    parser::CreateTableStmt createTableStmt;
+    createTableStmt.table = "users";
+    auto col = std::make_shared<parser::ColumnDefNode>();
+    col->name = "id";
+    col->type = DataType::INT;
+    createTableStmt.columns.push_back(col);
+    executor::DDLExecutor::executeCreateTable(DB_NAME, &createTableStmt);
+
+    // 创建索引
+    parser::CreateIndexStmt createIdxStmt;
+    createIdxStmt.indexName = "idx_id";
+    createIdxStmt.tableName = "users";
+    createIdxStmt.columnNames.push_back("id");
+    createIdxStmt.unique = false;
+
+    auto result = executor::DDLExecutor::executeCreateIndex(DB_NAME, &createIdxStmt);
+    assert(result.isSuccess());
+
+    std::cout << "testCreateIndex: PASSED" << std::endl;
+}
+
+void testDropIndex() {
+    std::cout << "Running testDropIndex..." << std::endl;
+
+    // 准备：创建数据库、表和索引
+    cleanup();
+    parser::CreateDatabaseStmt createDbStmt;
+    createDbStmt.database = DB_NAME;
+    executor::DDLExecutor::executeCreateDatabase(&createDbStmt);
+
+    parser::CreateTableStmt createTableStmt;
+    createTableStmt.table = "users";
+    auto col = std::make_shared<parser::ColumnDefNode>();
+    col->name = "id";
+    col->type = DataType::INT;
+    createTableStmt.columns.push_back(col);
+    executor::DDLExecutor::executeCreateTable(DB_NAME, &createTableStmt);
+
+    parser::CreateIndexStmt createIdxStmt;
+    createIdxStmt.indexName = "idx_id";
+    createIdxStmt.tableName = "users";
+    createIdxStmt.columnNames.push_back("id");
+    executor::DDLExecutor::executeCreateIndex(DB_NAME, &createIdxStmt);
+
+    // 删除索引
+    parser::DropStmt dropIdxStmt;
+    dropIdxStmt.objectType = "INDEX";
+    dropIdxStmt.name = "idx_id";
+
+    auto result = executor::DDLExecutor::executeDrop(DB_NAME, &dropIdxStmt);
+    assert(result.isSuccess());
+
+    std::cout << "testDropIndex: PASSED" << std::endl;
+}
+
 int main() {
     std::cout << "=== DDLExecutor Tests ===" << std::endl;
 
@@ -149,6 +225,8 @@ int main() {
     testDropTable();
     testDropDatabase();
     testUseDatabase();
+    testCreateIndex();
+    testDropIndex();
 
     std::cout << "\n=== All tests PASSED ===" << std::endl;
     return 0;
