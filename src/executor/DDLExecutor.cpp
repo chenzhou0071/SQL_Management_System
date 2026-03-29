@@ -246,7 +246,7 @@ Result<ExecutionResult> DDLExecutor::executeCreateIndex(const std::string& dbNam
 
     // 目前只支持单列索引，使用第一列
     std::string columnName = stmt->columnNames[0];
-    IndexUsageType type = stmt->unique ? IndexUsageType::UNIQUE : IndexUsageType::NORMAL;
+    storage::IndexUsageType type = stmt->unique ? storage::IndexUsageType::UNIQUE : storage::IndexUsageType::NORMAL;
 
     auto result = indexMgr.createIndex(dbName, stmt->tableName, stmt->indexName, columnName, type);
 

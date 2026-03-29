@@ -549,6 +549,7 @@ std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
 
     } else if (checkKeyword("TABLE")) {
         advance();
+        {
         auto stmt = std::make_shared<CreateTableStmt>();
         stmt->ifNotExists = ifNotExists;
 
@@ -786,6 +787,7 @@ std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
 
     match(TokenType::SEMICOLON);
     return stmt;
+    }
 }
 
 std::shared_ptr<AlterTableStmt> Parser::parseAlterStatement() {
