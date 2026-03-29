@@ -786,9 +786,10 @@ std::shared_ptr<ASTNode> Parser::parseCreateStatement() {
 
     match(TokenType::SEMICOLON);
     return stmt;
+    }
 }
 
-shared_ptr<AlterTableStmt> Parser::parseAlterStatement() {
+std::shared_ptr<AlterTableStmt> Parser::parseAlterStatement() {
     auto stmt = std::make_shared<AlterTableStmt>();
 
     expectKeyword("ALTER", "Expected ALTER");
