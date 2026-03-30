@@ -908,6 +908,108 @@ tests/
 
 ---
 
+### ✅ Phase 10: Windows GUI 客户端
+
+**实现时间**: 2026-03-30
+
+**核心功能**:
+
+#### 10.1 Qt GUI 客户端架构
+- ✅ **技术栈**: Qt6, C++17, CMake
+- ✅ **模式**: 简单的客户端-服务器架构
+- ✅ **构建**: 独立编译，不依赖服务器模块
+
+#### 10.2 网络层 (`tcpclient.h/cpp`)
+- ✅ **TcpClient 类**: 管理 TCP 连接
+  - `connectToHost()`: 连接服务器
+  - `disconnect()`: 断开连接
+  - `sendQuery()`: 发送 SQL 语句
+  - `isConnected()`: 检查连接状态
+- ✅ **信号机制**: `connected`, `disconnected`, `responseReady`, `errorOccurred`
+- ✅ **协议处理**: 按行接收响应（`\n` 分隔）
+
+#### 10.3 主窗口 (`mainwindow.h/cpp`)
+- ✅ **界面布局**:
+  - IP/端口输入框 + 连接按钮
+  - SQL 输入框 + 执行按钮
+  - 终端风格输出区域（暗色主题）
+  - 状态栏显示连接信息
+- ✅ **连接管理**:
+  - 连接成功: 绿色信息弹窗
+  - 连接失败: 红色错误弹窗
+  - 断开连接: 蓝色信息弹窗
+- ✅ **结果展示**:
+  - 表格格式化显示查询结果
+  - MySQL 风格边框 (+----+------+----+)
+  - 颜色区分: 列头紫色, 数据蓝色, 状态绿色
+
+#### 10.4 协议解析
+- ✅ **服务器响应格式**:
+  ```
+  OK
+  Query OK
+  <row_count>
+  <col1>,<col2>,...
+  <row1_col1>,<row1_col2>,...
+  ```
+- ✅ **错误响应格式**:
+  ```
+  ERROR
+  <error_message>
+  ```
+- ✅ **状态机解析**: 处理 OK/行数/列头/数据/ERROR 多状态
+
+#### 10.5 构建配置
+- ✅ **CMakeLists.txt**: Qt6 模块链接
+- ✅ **WIN32 入口点**: 避免控制台窗口弹出
+- ✅ **静态链接**: `-static-libstdc++ -static-libgcc` 避免 DLL 冲突
+- ✅ **windeployqt**: 自动部署 Qt 依赖
+
+#### 10.6 Bug 修复
+- ✅ **Reactor 连接保持**: 修改为 `EPOLL_CTL_MOD` 重新启用 oneshot，不关闭连接
+- ✅ **协议解析修复**: 正确处理 "Query OK" 消息行，跳过后再解析行数
+- ✅ **libstdc++ 版本冲突**: 静态链接解决 MinGW 和 Qt 运行时版本不兼容
+
+**客户端使用**:
+```bash
+# Windows 编译
+cd build
+cmake ..
+ninja minisql-client
+
+# 运行
+./bin/minisql-client.exe
+
+# Linux 服务器编译
+cd build_linux
+cmake .. -DBUILD_SERVER=ON
+make -j4
+./bin/minisql_server
+```
+
+**测试 SQL**:
+```sql
+CREATE DATABASE test_db;
+USE test_db;
+CREATE TABLE users (id INT, name VARCHAR(50), age INT);
+INSERT INTO users VALUES (1, 'Tom', 20);
+INSERT INTO users VALUES (2, 'Jane', 25);
+SELECT * FROM users;
+UPDATE users SET age = 21 WHERE id = 1;
+DELETE FROM users WHERE id = 1;
+```
+
+**文件清单**:
+```
+src/client/
+├── CMakeLists.txt           # 构建配置
+├── main.cpp                 # 程序入口
+├── mainwindow.h/cpp        # 主窗口
+└── tcpclient.h/cpp         # TCP 客户端
+```
+
+---
+
 ## 未实现功能
 
 | 模块 | 功能 | 预估工作量 |
@@ -1265,11 +1367,13 @@ data/demo_db/
 - **(Phase 7)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
 - **(Phase 8)**: feat(Phase 8): Linux 服务器实现 - Reactor + Thread Pool + 事务管理 + WAL + 并发控制 + SQL 执行器集成
 - **2026-03-29**: fix(parser): 修复 CREATE INDEX 和 DROP INDEX 解析问题
-  - 修复 CREATE UNIQUE INDEX 解析顺序（UNIQUE 应在 INDEX 之前）
-  - 添加 DROP INDEX 支持（parseDropStatement 添加 INDEX 类型）
-  - 修复 Parser.cpp 大括号结构问题
-  - 所有 1426 个测试通过（包括 84 个 parser 测试）
-  - 测试覆盖：CREATE DATABASE, CREATE INDEX, DROP INDEX 完整支持
+- **2026-03-30**: feat(client): 添加 Qt GUI 客户端连接 MiniSQL 服务器
+  - TcpClient 实现 TCP 连接管理
+  - MainWindow 主窗口含 IP/端口输入和 SQL 执行
+  - 表格格式化结果展示
+  - 连接状态和错误弹窗提示
+  - Reactor 保持连接不关闭
+  - 客户端协议解析正确显示 SELECT 结果
 
 ---
 
