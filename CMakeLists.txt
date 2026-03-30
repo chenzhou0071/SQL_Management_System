@@ -25,7 +25,7 @@ else()
     # Qt 6.5.3
     set(QT_VERSION_MAJOR 6)
     set(CMAKE_PREFIX_PATH "E:/Qt/6.5.3/mingw_64/lib/cmake" CACHE PATH "Qt cmake prefix")
-    find_package(Qt${QT_VERSION_MAJOR} 6.5.3 COMPONENTS Core Widgets Gui REQUIRED)
+    find_package(Qt${QT_VERSION_MAJOR} 6.5.3 COMPONENTS Core Widgets Gui Network REQUIRED)
     message(STATUS "Building GUI Version")
     message(STATUS "Output: ${CMAKE_BINARY_DIR}/bin")
 endif()
@@ -82,33 +82,12 @@ if(BUILD_SERVER)
 
 else()
     # ========================================
-    # Windows GUI版本
+    # Windows GUI客户端版本
     # ========================================
     add_subdirectory(src/client)
 
-    add_executable(minisql
-        src/main.cpp
-    )
-
-    target_link_libraries(minisql
-        PRIVATE
-            common
-            storage
-            parser
-            executor
-            optimizer
-            client_gui
-            Qt${QT_VERSION_MAJOR}::Core
-            Qt${QT_VERSION_MAJOR}::Widgets
-            Qt${QT_VERSION_MAJOR}::Gui
-    )
-
-    # 运行时创建目录
-    add_custom_command(TARGET minisql POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            $<TARGET_FILE_DIR:minisql>/../data
-            $<TARGET_FILE_DIR:minisql>/../logs
-    )
+    # minisql 可执行文件已经是 client/CMakeLists.txt 定义的
+    # 不需要在这里重复定义
 endif()
 
 # ============================================

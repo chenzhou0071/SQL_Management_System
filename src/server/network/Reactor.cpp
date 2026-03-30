@@ -171,7 +171,11 @@ void Reactor::handleRead(int fd) {
     int clientFd = fd;
     threadPool_->submit([this, clientFd, sql]() {
         sqlHandler_(clientFd, sql);
-        removeFromEpoll(clientFd);
+        // 重新启用 oneshot，等待下一个请求
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLONESHOT;
+        ev.data.fd = clientFd;
+        epoll_ctl(epollFd_, EPOLL_CTL_MOD, clientFd, &ev);
     });
 }
 
