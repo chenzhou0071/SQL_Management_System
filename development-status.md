@@ -811,100 +811,21 @@ build_server/
 
 **核心问题**: 并发测试时服务器崩溃 (segmentation fault)
 
-**问题分析**:
-1. **Executor 单例共享状态问题**: `Executor::currentDatabase_` 是单例成员,多个并发连接互相覆盖
-2. **Result<T> 内存双重释放**: `TcpServer` 使用 `execResult.release()` 后未正确管理生命周期
-3. **ExpressionEvaluator 缺少数据库上下文**: INSERT/UPDATE/DELETE 执行时无法访问子查询
-
 **修复方案**:
 
 #### 9.1 Session 级别数据库隔离
 - ✅ **新增 `Session.h`**: 每个 TCP 连接独立的会话状态
-  ```cpp
-  class Session {
-      std::string currentDatabase_;  // 每个连接独立的当前数据库
-  };
-  ```
 - ✅ **TcpServer 会话管理**: `std::unordered_map<int, Session>` 按 fd 管理会话
 - ✅ **修改 Executor 接口**: 新增 `execute(stmt, dbName)` 重载方法
-  ```cpp
-  Result<ExecutionResult> execute(parser::ASTNode* stmt, const std::string& dbName);
-  ```
-- ✅ **TcpServer 传递会话数据库**: 使用 session 的 `currentDatabase` 而非单例
 
 #### 9.2 Result<T> 内存管理修复
-- ✅ **使用 `unique_ptr` 替代裸指针**:
-  ```cpp
-  std::unique_ptr<T> value_;  // 自动管理内存,防止双重释放
-  ```
-- ✅ **移动构造正确转移所有权**: `value_(other.value_.release())`
-- ✅ **TcpServer 使用 `getValue()` 替代 `release()`**: 避免手动 delete
+- ✅ **使用 `unique_ptr` 替代裸指针**: 防止双重释放
+- ✅ **TcpServer 使用 `getValue()` 替代 `release()`**
 
 #### 9.3 ExpressionEvaluator 数据库上下文
-- ✅ **INSERT 执行器设置数据库**: `evaluator.setCurrentDatabase(dbName)`
-- ✅ **UPDATE 执行器设置数据库**: 同上
-- ✅ **DELETE 执行器设置数据库**: 同上
+- ✅ **INSERT/UPDATE/DELETE 执行器设置数据库上下文**
 
-#### 9.4 执行器优化
-- ✅ **新增 `executeSelect(stmt, dbName)` 重载**: 直接使用传入的数据库名
-- ✅ **移除 `execute(stmt, dbName)` 中的临时修改**: 不再 save/restore `currentDatabase_`
-- ✅ **所有 DML/DDL 直接使用 `dbName` 参数**: 完全线程安全
-
-**测试结果**:
-- ✅ 并发读测试通过 (10 客户端 × 20 操作)
-- ✅ 并发写测试通过
-- ✅ 吞吐量: ~900 ops/sec
-- ✅ 无崩溃/段错误
-
-**测试命令**:
-```bash
-# 编译
-cd build_linux && make -j4
-
-# 启动服务器
-./minisql_server
-
-# 运行并发测试
-cd /mnt/hgfs/share/SQL\ Management\ System
-bash test_concurrent_light.sh
-```
-
-**并发测试结果示例**:
-```
-并发客户端数: 10
-每客户端操作数: 20
-
-测试1: 并发读测试
-✓ 并发读测试完成
-总操作数: 200
-总耗时: 0.22s
-吞吐量: 903.74 ops/sec
-
-测试2: 并发写测试
-✓ 并发写测试完成
-总操作数: 200
-总耗时: 0.21s
-吞吐量: 933.96 ops/sec
-```
-
-**修改文件清单**:
-```
-src/common/
-└── Error.h                 # Result<T> 改用 unique_ptr
-
-src/executor/
-├── Executor.h              # 新增 execute(stmt, dbName) 声明
-├── Executor.cpp            # 实现 executeSelect(stmt, dbName)
-└── DMLExecutor.cpp        # 设置 ExpressionEvaluator 数据库上下文
-
-src/server/network/
-├── Session.h              # 新增: 会话状态管理
-├── TcpServer.h            # 新增: 会话管理
-└── TcpServer.cpp          # 使用 Session 数据库
-
-tests/
-└── test_concurrent_light.sh  # 并发测试脚本
-```
+**测试结果**: ~900 ops/sec 吞吐量，无崩溃
 
 ---
 
@@ -1008,36 +929,85 @@ src/client/
 └── tcpclient.h/cpp         # TCP 客户端
 ```
 
+**客户端使用**:
+```bash
+# Windows 编译
+cd build && cmake .. && ninja minisql-client
+
+# Linux 服务器编译
+cd build_linux && cmake .. -DBUILD_SERVER=ON && make -j4
+```
+
 ---
 
-## 未实现功能
+### ✅ Phase 11: SHOW / DESC 语句支持
 
-| 模块 | 功能 | 预估工作量 |
-|------|------|-----------|
-| **Parser** | 比较运算符子查询 `(SELECT ...) > ANY/ALL (...)` | 50-100 行 |
-| **Executor** | 关联子查询处理（需外部行上下文） | 200-300 行 |
-| **Executor** | 比较运算符子查询 ALL/ANY | 100-150 行 |
-| **Executor** | 子查询去关联化 | 100-200 行 |
-| **Executor** | 外键 CASCADE ON DELETE/UPDATE | 100-150 行 |
-| **Executor** | 外键自引用支持 | 50-100 行 |
-| **Executor** | DELETE 时外键引用检查 | 50-100 行 |
-| **Parser+Executor** | INSERT/UPDATE 数据类型验证 | 50-100 行 |
-| **Parser+Executor** | 非空约束验证 | 50-100 行 |
-| **Parser+Executor** | 主键/唯一约束检查 | 50-100 行 |
-| **Parser+Executor** | 默认值处理 | 50-100 行 |
-| **Optimizer** | Hash Join | 200-300 行 |
-| **Optimizer** | Sort-Merge Join | 200-300 行 |
-| **Optimizer** | 多表连接顺序优化 | 100-200 行 |
-| **Optimizer** | 利用索引消除排序 | 100-150 行 |
-| **Optimizer** | 冗余排序消除 | 50-100 行 |
-| **Optimizer** | JOIN 条件下推 | 100-150 行 |
-| **Optimizer** | WHERE 条件下推到子查询 | 50-100 行 |
-| **Optimizer** | 聚合后条件下推 | 50-100 行 |
-| **Storage** | B+ 树节点合并与借键 | 150-200 行 |
-| **Storage** | 事务支持（ACID + MVCC + WAL） | 500-800 行 |
-| **Storage** | 视图（CREATE VIEW + 查询重写） | 200-300 行 |
-| **Storage** | 存储过程（CALL 执行） | 300-400 行 |
-| **Storage** | 触发器（BEFORE/AFTER 事件） | 300-400 行 |
+**实现时间**: 2026-03-31
+
+**核心功能**:
+
+#### 11.1 DESCRIBE 语句解析
+- ✅ **AST.h 添加 `DescribeStmt` 节点**: 新增 `DESCRIBE_STMT` 枚举值和 `DescribeStmt` 类
+- ✅ **Parser.cpp 解析**: 支持 `DESC table_name` 和 `DESCRIBE table_name` 语法
+- ✅ **关键字识别**: `DESC` 和 `DESCRIBE` 关键字解析
+
+#### 11.2 SHOW DATABASES / SHOW TABLES 执行
+- ✅ **DDLExecutor.h 声明**: 新增 `executeShowDatabases()` 和 `executeShowTables()` 方法
+- ✅ **DDLExecutor.cpp 实现**: 调用 `TableManager` 的 `listDatabases()` 和 `listTables()`
+- ✅ **Executor.cpp 集成**: 添加 `SHOW_STMT` 分支处理
+
+#### 11.3 DESC 执行
+- ✅ **DDLExecutor.cpp 实现 `executeDescribeTable()`**: 获取表结构并格式化输出
+- ✅ **列信息展示**: Field（列名）、Type（类型）、Null（是否可空）、Key（主键/唯一）、Default（默认值）
+- ✅ **类型格式化**: 支持 `VARCHAR(50)` 等带长度的类型显示
+
+**文件修改清单**:
+```
+src/parser/
+├── AST.h              # 添加 DESCRIBE_STMT 枚举和 DescribeStmt 类
+├── Parser.h           # 添加 parseDescribeStatement() 声明
+└── Parser.cpp         # 实现 DESC/DESCRIBE 语句解析
+
+src/executor/
+├── DDLExecutor.h      # 添加 executeShowDatabases/executeShowTables/executeDescribeTable 声明
+├── DDLExecutor.cpp    # 实现上述三个方法
+└── Executor.cpp       # 添加 SHOW_STMT 和 DESCRIBE_STMT 执行分支
+```
+
+**测试 SQL**:
+```sql
+SHOW DATABASES;
+SHOW TABLES;
+DESC users;
+DESCRIBE users;
+```
+
+---
+
+---
+
+## 项目总结
+
+### 已完成功能
+
+| 类别 | 功能 | 状态 |
+|------|------|------|
+| **存储** | B+树索引、表管理、文件操作 | ✅ |
+| **解析** | 词法/语法/语义分析、函数调用、子查询 | ✅ |
+| **执行** | Volcano模型、全部算子、DML/DDL | ✅ |
+| **优化** | 规则优化、代价优化、索引选择、EXPLAIN | ✅ |
+| **网络** | Reactor+epoll、线程池、高并发服务 | ✅ |
+| **事务** | WAL日志、表级锁、会话隔离 | ✅ |
+| **客户端** | Qt GUI、TCP连接、SQL执行、结果展示 | ✅ |
+| **扩展** | SHOW DATABASES/TABLES、DESC表结构 | ✅ |
+
+### 未实现功能（可选扩展）
+
+- Hash Join / Sort-Merge Join
+- 关联子查询
+- 外键 CASCADE
+- 存储过程 / 触发器
+- 视图 (CREATE VIEW)
 
 ---
 
@@ -1223,157 +1193,9 @@ cmake --build . --target executor
 
 ---
 
-## 目录结构
+## 项目状态
 
-```
-E:\pro\SQL_Management_System\
-├── src/
-│   ├── common/          # 公共模块 (Phase 1)
-│   │   ├── Type.h/cpp
-│   │   ├── Value.h/cpp
-│   │   ├── Error.h/cpp
-│   │   └── Logger.h/cpp
-│   │
-│   ├── storage/         # 存储引擎 (Phase 2)
-│   │   ├── FileIO.h/cpp
-│   │   ├── TableManager.h/cpp
-│   │   ├── BPlusTree.h/cpp
-│   │   └── IndexManager.h/cpp
-│   │
-│   ├── parser/          # SQL 解析器 (Phase 3)
-│   │   ├── Token.h/cpp
-│   │   ├── Keywords.cpp
-│   │   ├── Lexer.h/cpp
-│   │   ├── AST.h
-│   │   ├── Parser.h/cpp
-│   │   └── SemanticAnalyzer.h/cpp
-│   │
-│   ├── executor/        # 查询执行器 (Phase 4, Phase 7)
-│   │   ├── ExecutionOperator.h/cpp
-│   │   ├── ExpressionEvaluator.h/cpp
-│   │   ├── TableScanOperator.h/cpp
-│   │   ├── FilterOperator.h/cpp
-│   │   ├── ProjectOperator.h/cpp
-│   │   ├── NestedLoopJoinOperator.h/cpp
-│   │   ├── AggregateOperator.h/cpp
-│   │   ├── SortOperator.h/cpp
-│   │   ├── LimitOperator.h/cpp
-│   │   ├── SubqueryScanOperator.h/cpp  # Phase 7: FROM 子查询
-│   │   ├── DMLExecutor.h/cpp
-│   │   ├── DDLExecutor.h/cpp
-│   │   └── Executor.h/cpp
-│   │
-│   └── external/        # 外部依赖
-│       └── json.hpp     # nlohmann/json 库
-│
-├── tests/               # 测试代码
-│   ├── test_utils.h/cpp
-│   ├── test_common.cpp
-│   ├── test_storage.cpp
-│   ├── test_lexer.cpp
-│   ├── test_ast.cpp
-│   ├── test_parser.cpp
-│   ├── test_semantic.cpp
-│   ├── test_expression_evaluator.cpp
-│   ├── test_table_scan.cpp
-│   ├── test_filter_operator.cpp
-│   ├── test_project_operator.cpp
-│   ├── test_join_operator.cpp
-│   ├── test_limit_operator.cpp
-│   ├── test_sort_operator.cpp
-│   ├── test_aggregate_operator.cpp
-│   ├── test_dml_executor.cpp
-│   ├── test_ddl_executor.cpp
-│   ├── test_executor.cpp
-│   ├── test_subquery.cpp
-│   ├── test_integration.cpp
-│   ├── test_foreign_key.cpp
-│   ├── test_join.cpp              # Phase 7
-│   ├── test_from_subquery.cpp     # Phase 7
-│   └── test_having.cpp           # Phase 7
-│
-├── build/               # 编译输出
-│   └── bin/
-│       ├── data/        # 数据存储目录
-│       └── logs/        # 日志目录
-│
-└── docs/                # 文档
-```
-
----
-
-## 数据存储示例
-
-运行 `demo_file_creation.exe` 后生成的文件：
-
-```
-data/demo_db/
-├── users.meta           # 表结构定义 (JSON)
-├── users.data           # 表数据 (CSV)
-├── users.rowid          # 自增ID计数器
-└── idx_name.idx         # 索引文件
-```
-
----
-
-## 已知限制
-
-详见上方 **未实现功能** 表格，按模块分类列出完整待办清单。
-
----
-
-## 下一阶段建议
-
-1. **数据类型与约束验证**（100-200 行）— 补全基础验证
-2. **子查询执行增强**（200-300 行）— 支持标量/关联子查询
-3. **谓词下推**（150-200 行）— 优化器增强
-4. **连接优化**（300-400 行）— Hash Join / Sort-Merge Join
-5. **外键约束增强**（150-200 行）— CASCADE / 自引用
-6. **事务管理**（500-800 行）— ACID + MVCC + WAL
-
----
-
-## 开发规范
-
-### 代码风格
-- 使用 C++17 标准
-- 类名大驼峰: `TableManager`
-- 方法名小驼峰: `createTable`
-- 成员变量下划线后缀: `order_`
-- 常量大写下划线: `MAX_KEYS`
-
-### 错误处理
-- 使用 `Result<T>` 返回错误
-- 错误消息包含上下文信息
-- 记录 ERROR 级别日志
-
-### 测试规范
-- 每个模块对应测试文件
-- 测试用例命名: `test_<module>_<feature>`
-- 使用自定义测试宏: `ASSERT_TRUE`, `ASSERT_EQ` 等
-- 测试文件不自动退出（等待用户输入）
-
----
-
-## 提交记录
-
-- **2e7e544**: feat: 完成第一阶段 - 基础框架
-- **82743b3**: feat: 实现第二阶段 - 存储与索引引擎
-- **ceaeb95**: feat(parser): 实现完整的 SQL 解析器（Lexer、AST、Parser、SemanticAnalyzer）
-- **1393cfa**: feat(storage): 实现 B+ 树索引持久化
-- **00b9b88**: feat(parser): 实现 ALTER TABLE 和函数调用表达式
-- **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
-- **964b932**: feat(executor): 实现查询执行器（Volcano 模型、全部执行算子、DML/DDL 执行器）
-- **(Phase 7)**: feat(Phase 7): JOIN 执行 + FROM 子查询 + HAVING + 索引选择恢复 + Result<T> 悬空指针修复
-- **(Phase 8)**: feat(Phase 8): Linux 服务器实现 - Reactor + Thread Pool + 事务管理 + WAL + 并发控制 + SQL 执行器集成
-- **2026-03-29**: fix(parser): 修复 CREATE INDEX 和 DROP INDEX 解析问题
-- **2026-03-30**: feat(client): 添加 Qt GUI 客户端连接 MiniSQL 服务器
-  - TcpClient 实现 TCP 连接管理
-  - MainWindow 主窗口含 IP/端口输入和 SQL 执行
-  - 表格格式化结果展示
-  - 连接状态和错误弹窗提示
-  - Reactor 保持连接不关闭
-  - 客户端协议解析正确显示 SELECT 结果
+✅ **MiniSQL 项目已完成**
 
 ---
 

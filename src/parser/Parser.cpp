@@ -58,6 +58,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
 
     if (checkKeyword("USE")) return parseUseStatement();
     if (checkKeyword("SHOW")) return parseShowStatement();
+    if (checkKeyword("DESC") || checkKeyword("DESCRIBE")) return parseDescribeStatement();
     if (checkKeyword("EXPLAIN")) return parseExplainStatement();
     if (checkKeyword("ANALYZE")) return parseAnalyzeStatement();
     if (checkKeyword("SELECT")) return parseSelectStatement();
@@ -110,6 +111,28 @@ std::shared_ptr<ASTNode> Parser::parseShowStatement() {
             "Expected DATABASES or TABLES after SHOW"
         );
     }
+
+    match(TokenType::SEMICOLON);
+    return stmt;
+}
+
+// DESCRIBE 语句解析
+std::shared_ptr<ASTNode> Parser::parseDescribeStatement() {
+    if (checkKeyword("DESC") || checkKeyword("DESCRIBE")) {
+        advance();
+    }
+
+    auto stmt = std::make_shared<DescribeStmt>();
+
+    if (!check(TokenType::IDENTIFIER)) {
+        throw MiniSQLException(
+            ErrorCode::PARSER_MISSING_TOKEN,
+            "Expected table name after DESC/DESCRIBE"
+        );
+    }
+
+    stmt->tableName = current_.value;
+    advance();
 
     match(TokenType::SEMICOLON);
     return stmt;

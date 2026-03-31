@@ -30,6 +30,7 @@ enum class ASTNodeType {
     ALTER_STMT,
     USE_STMT,
     SHOW_STMT,
+    DESCRIBE_STMT,
     EXPLAIN_STMT,
     ANALYZE_STMT,
 
@@ -571,6 +572,20 @@ public:
 
     std::string toString() const override {
         return "SHOW " + objectType;
+    }
+};
+
+// ============================================================
+// DESCRIBE 语句
+// ============================================================
+class DescribeStmt : public ASTNode {
+public:
+    DescribeStmt() : ASTNode(ASTNodeType::DESCRIBE_STMT) {}
+
+    std::string tableName;
+
+    std::string toString() const override {
+        return "DESCRIBE " + tableName;
     }
 };
 

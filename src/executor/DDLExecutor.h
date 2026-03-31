@@ -30,6 +30,15 @@ public:
     // 执行 USE DATABASE 语句
     static Result<ExecutionResult> executeUseDatabase(parser::UseStmt* stmt);
 
+    // 执行 SHOW DATABASES 语句
+    static Result<ExecutionResult> executeShowDatabases();
+
+    // 执行 SHOW TABLES 语句
+    static Result<ExecutionResult> executeShowTables(const std::string& dbName);
+
+    // 执行 DESC table_name 语句
+    static Result<ExecutionResult> executeDescribeTable(const std::string& dbName, const std::string& tableName);
+
 private:
     // 将 ColumnDefNode 转换为 ColumnDef
     static ColumnDef convertColumnDef(const parser::ColumnDefNode& node);

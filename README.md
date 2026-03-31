@@ -127,6 +127,11 @@ USE test_db;
 CREATE TABLE users (id INT, name VARCHAR(50), age INT);
 CREATE TABLE orders (id INT, user_id INT, amount INT);
 
+-- 查看数据库和表
+SHOW DATABASES;
+SHOW TABLES;
+DESC users;
+
 -- 创建索引
 CREATE INDEX idx_age ON users(age);
 

@@ -231,6 +231,75 @@ Result<ExecutionResult> DDLExecutor::executeUseDatabase(parser::UseStmt* stmt) {
     return Result<ExecutionResult>(execResult);
 }
 
+Result<ExecutionResult> DDLExecutor::executeShowDatabases() {
+    auto& tableMgr = storage::TableManager::getInstance();
+    auto result = tableMgr.listDatabases();
+
+    if (!result.isSuccess()) {
+        return Result<ExecutionResult>(result.getError());
+    }
+
+    auto databases = result.getValue();
+    ExecutionResult execResult;
+    setResultMetadata(execResult, {"Database"}, {DataType::VARCHAR});
+    for (const auto& db : *databases) {
+        execResult.rows.push_back({Value(db)});
+    }
+    return Result<ExecutionResult>(execResult);
+}
+
+Result<ExecutionResult> DDLExecutor::executeShowTables(const std::string& dbName) {
+    auto& tableMgr = storage::TableManager::getInstance();
+    auto result = tableMgr.listTables(dbName);
+
+    if (!result.isSuccess()) {
+        return Result<ExecutionResult>(result.getError());
+    }
+
+    auto tables = result.getValue();
+    ExecutionResult execResult;
+    setResultMetadata(execResult, {"Tables_in_" + dbName}, {DataType::VARCHAR});
+    for (const auto& table : *tables) {
+        execResult.rows.push_back({Value(table)});
+    }
+    return Result<ExecutionResult>(execResult);
+}
+
+Result<ExecutionResult> DDLExecutor::executeDescribeTable(const std::string& dbName, const std::string& tableName) {
+    auto& tableMgr = storage::TableManager::getInstance();
+    auto result = tableMgr.getTableDef(dbName, tableName);
+
+    if (!result.isSuccess()) {
+        return Result<ExecutionResult>(result.getError());
+    }
+
+    auto tableDef = result.getValue();
+    ExecutionResult execResult;
+    setResultMetadata(execResult, {"Field", "Type", "Null", "Key", "Default"},
+                      {DataType::VARCHAR, DataType::VARCHAR, DataType::VARCHAR, DataType::VARCHAR, DataType::VARCHAR});
+
+    for (const auto& col : tableDef->columns) {
+        std::string nullStr = col.notNull ? "NO" : "YES";
+        std::string keyStr;
+        if (col.primaryKey) keyStr = "PRI";
+        else if (col.unique) keyStr = "UNI";
+
+        std::string defaultStr = "NULL";
+        if (col.hasDefault) {
+            defaultStr = col.defaultValue;
+        }
+
+        std::string typeStr = TypeUtils::typeToString(col.type);
+        if (col.length > 0) {
+            typeStr += "(" + std::to_string(col.length) + ")";
+        }
+
+        execResult.rows.push_back({Value(col.name), Value(typeStr), Value(nullStr),
+                                   Value(keyStr), Value(defaultStr)});
+    }
+    return Result<ExecutionResult>(execResult);
+}
+
 Result<ExecutionResult> DDLExecutor::executeCreateIndex(const std::string& dbName, parser::CreateIndexStmt* stmt) {
     if (!stmt) {
         MiniSQLException error(ErrorCode::EXEC_INVALID_VALUE, "NULL CREATE INDEX statement");

@@ -179,6 +179,22 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt) {
                 return result;
             }
 
+            case parser::ASTNodeType::SHOW_STMT: {
+                auto showStmt = dynamic_cast<parser::ShowStmt*>(stmt);
+                if (showStmt->objectType == "DATABASES") {
+                    return DDLExecutor::executeShowDatabases();
+                } else if (showStmt->objectType == "TABLES") {
+                    return DDLExecutor::executeShowTables(currentDatabase_);
+                }
+                return Result<ExecutionResult>(
+                    MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unsupported SHOW type"));
+            }
+
+            case parser::ASTNodeType::DESCRIBE_STMT: {
+                auto descStmt = dynamic_cast<parser::DescribeStmt*>(stmt);
+                return DDLExecutor::executeDescribeTable(currentDatabase_, descStmt->tableName);
+            }
+
             default:
                 return Result<ExecutionResult>(
                     MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unsupported statement type"));
@@ -302,6 +318,22 @@ Result<ExecutionResult> Executor::execute(parser::ASTNode* stmt, const std::stri
             case parser::ASTNodeType::USE_STMT: {
                 auto useStmt = dynamic_cast<parser::UseStmt*>(stmt);
                 return DDLExecutor::executeUseDatabase(useStmt);
+            }
+
+            case parser::ASTNodeType::SHOW_STMT: {
+                auto showStmt = dynamic_cast<parser::ShowStmt*>(stmt);
+                if (showStmt->objectType == "DATABASES") {
+                    return DDLExecutor::executeShowDatabases();
+                } else if (showStmt->objectType == "TABLES") {
+                    return DDLExecutor::executeShowTables(dbName);
+                }
+                return Result<ExecutionResult>(
+                    MiniSQLException(ErrorCode::EXEC_INVALID_VALUE, "Unsupported SHOW type"));
+            }
+
+            case parser::ASTNodeType::DESCRIBE_STMT: {
+                auto descStmt = dynamic_cast<parser::DescribeStmt*>(stmt);
+                return DDLExecutor::executeDescribeTable(dbName, descStmt->tableName);
             }
 
             default:
