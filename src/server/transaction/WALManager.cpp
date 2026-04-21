@@ -6,6 +6,43 @@
 
 namespace minisql {
 
+// ============================================================
+// WAL预写日志管理器 - 事务持久性和崩溃恢复
+// ============================================================
+// WAL原理：
+// 在修改数据文件之前，先将修改操作写入日志文件（WAL）
+// 这样即使在数据写入过程中崩溃，也可以通过WAL恢复
+//
+// WAL流程：
+// 1. 事务开始 -> 写BEGIN日志
+// 2. 执行操作 -> 写INSERT/UPDATE/DELETE日志
+// 3. 事务提交 -> 写COMMIT日志 + WAL强制刷盘（fsync）
+// 4. 数据修改 -> 修改数据文件（可以延迟，因为有WAL保护）
+//
+// 崩溃恢复流程：
+// 1. 读取WAL文件
+// 2. 重放已提交事务的操作（redo）
+// 3. 忽略未提交事务（事务未完成，不恢复）
+// 4. 恢复完成后truncate WAL（清空日志）
+//
+// WAL优势：
+// - 顺序写入：日志文件追加写，性能好（相比随机写数据文件）
+// - 崩溃恢复：保证已提交事务不丢失
+// - 延迟刷盘：数据可以延迟写入，通过WAL保护
+//
+// WAL日志格式：
+// [LSN(8字节)][TxnID(8字节)][Type(1字节)][TableLen(4)][KeyLen(4)][ValueLen(4)][Table][Key][Value]
+// - LSN: 日志序列号（Log Sequence Number，递增）
+// - TxnID: 事务ID
+// - Type: 日志类型（BEGIN/INSERT/UPDATE/DELETE/COMMIT）
+// - Table/Key/Value: 操作的数据
+//
+// 注意事项：
+// - 每次写日志后立即flush（walFile_.flush()）
+// - 事务提交时必须fsync（确保日志写入磁盘）
+// - WAL文件路径：dataDir/wal/minisql.wal
+// ============================================================
+
 WALManager::~WALManager() {
     if (walFile_.is_open()) {
         walFile_.flush();
